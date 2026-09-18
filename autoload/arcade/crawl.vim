@@ -610,7 +610,7 @@ function! s:draw_help(st) abort
         \ '  actions     p            drink a potion',
         \ '              >            descend the stairs you stand on',
         \ '              r            restart from depth 1',
-        \ '              q / <Esc>    quit',
+        \ '              q            quit (<Esc> is disabled mid-run)',
         \ '',
         \ '  glyphs      @ you        > stairs down    $ gold',
         \ '              ! potion     / weapon         [ armor',
@@ -677,6 +677,18 @@ function! s:on_quit(ctl, key) abort
   call arcade#ui#close()
 endfunction
 
+" <Esc> is muscle memory in normal mode, and a long dungeon run has a lot
+" more to lose than a 2048 board. Once the run is actually over there is
+" nothing left to lose, so let <Esc> close it like q would; mid-run it
+" just points at q instead of discarding progress.
+function! s:on_escape(ctl, key) abort
+  if a:ctl.state.over
+    call s:on_quit(a:ctl, a:key)
+  else
+    call arcade#crawl#log(a:ctl.state, 'q quits -- <Esc> is disabled so a stray tap does not end the run.')
+  endif
+endfunction
+
 function! arcade#crawl#start(...) abort
   let l:ctl = {
         \ 'name': 'arcade://crawl',
@@ -694,5 +706,6 @@ function! arcade#crawl#start(...) abort
   let l:ctl.keys['?'] = function('s:on_help')
   let l:ctl.keys['r'] = function('s:on_restart')
   let l:ctl.keys['q'] = function('s:on_quit')
+  let l:ctl.keys['<Esc>'] = function('s:on_escape')
   return arcade#ui#open(l:ctl)
 endfunction

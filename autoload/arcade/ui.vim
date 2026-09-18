@@ -65,11 +65,21 @@ function! s:setup_buffer(ctl) abort
   return l:bufnr
 endfunction
 
+" A mapping's {rhs}, even built via execute() and string(), still goes
+" through Vim's own key-notation translation -- '<Esc>' or '<Left>' typed
+" as text inside that rhs becomes the *actual* control byte the moment the
+" mapping is defined, not a literal string. So embedding the key name as a
+" quoted argument only round-trips correctly for plain characters; for any
+" special key, arcade#ui#key() would receive that raw byte back instead of
+" the name it was mapped under, and the lookup in ctl.keys would silently
+" miss. Passing a plain integer index instead sidesteps the translation
+" entirely: digits mean the same thing on both sides of execute().
 function! s:bind_keys(ctl) abort
   nnoremap <buffer><silent><nowait> <Esc> :call arcade#ui#close()<CR>
-  for l:key in keys(a:ctl.keys)
-    execute printf('nnoremap <buffer><silent><nowait> %s :call arcade#ui#key(%s)<CR>',
-          \ l:key, string(l:key))
+  let b:arcade_key_names = keys(a:ctl.keys)
+  for l:idx in range(len(b:arcade_key_names))
+    execute printf('nnoremap <buffer><silent><nowait> %s :call arcade#ui#dispatch(%d)<CR>',
+          \ b:arcade_key_names[l:idx], l:idx)
   endfor
   " Swallow keys that would otherwise move the cursor or edit the board.
   for l:key in ['i', 'I', 'a', 'A', 'o', 'O', 'c', 'C', 'd', 'D', 's', 'S',
@@ -98,6 +108,17 @@ function! arcade#ui#open(ctl) abort
   return l:bufnr
 endfunction
 
+" Entry point actually wired to keypresses; see the comment on s:bind_keys
+" for why the mapping passes an index here rather than the key name.
+function! arcade#ui#dispatch(idx) abort
+  if !exists('b:arcade_key_names') || a:idx >= len(b:arcade_key_names)
+    return
+  endif
+  call arcade#ui#key(b:arcade_key_names[a:idx])
+endfunction
+
+" Entry point for direct calls (tests, other mappings) that already have
+" the real key name in hand.
 function! arcade#ui#key(key) abort
   if !exists('b:arcade')
     return

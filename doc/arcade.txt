@@ -62,7 +62,11 @@ when they can see you; field of view is recursive shadowcasting.
     >                                     descend the stairs you stand on
     ?                                     toggle help
     r                                     restart at depth 1
-    q  <Esc>                              quit
+    q                                     quit
+
+<Esc> is disabled while a run is in progress -- it only echoes a reminder
+to press q, rather than discarding a dungeon you may be several depths
+into. It closes the game normally once a run has ended.
 
 Glyphs: >
     @  you                 >  stairs down       $  gold

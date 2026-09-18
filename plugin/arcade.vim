@@ -23,7 +23,14 @@ function! s:define_highlights() abort
   call s:hl('Arcade2048Hint',  'ctermfg=240 guifg=#6c6660')
   call s:hl('Arcade2048Win',   'cterm=bold gui=bold ctermfg=220 guifg=#edc53f')
   call s:hl('Arcade2048Over',  'cterm=bold gui=bold ctermfg=203 guifg=#f65e3b')
-  call s:hl('Arcade2048Empty', 'ctermbg=250 guibg=#cdc1b4')
+  " No fill on empty cells: they take the editor's own background instead
+  " of a light tan. The classic tan/cream/cream progression (empty -> 2 ->
+  " 4) reads fine on the original's flat canvas, but in a terminal, over a
+  " dark colorscheme, those three sit within a few percent of each other in
+  " luminance and the early board looks like a wash of nothing.  Leaving
+  " empty cells unfilled means populated tiles read as distinct light
+  " blocks against whatever background is already there.
+  call s:hl('Arcade2048Empty', 'ctermfg=239 guifg=#3c3a32')
   call s:hl('Arcade2048T2',    'ctermfg=238 ctermbg=255 guifg=#776e65 guibg=#eee4da')
   call s:hl('Arcade2048T4',    'ctermfg=238 ctermbg=253 guifg=#776e65 guibg=#ede0c8')
   call s:hl('Arcade2048T8',    'ctermfg=255 ctermbg=216 guifg=#f9f6f2 guibg=#f2b179')
