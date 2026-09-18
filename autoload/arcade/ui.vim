@@ -28,6 +28,13 @@ endfunction
 
 function! s:make_window() abort
   let l:how = get(g:, 'arcade_window', 'tab')
+  " winfixbuf is window-local: it survives the arcade buffer being wiped
+  " out, and Neovim (unlike Vim) hard-errors on enew/new/vnew into a
+  " fixed window instead of ignoring it. Clear it before reusing the
+  " window; s:setup_buffer sets it again on the new arcade buffer.
+  if l:how !=# 'tab' && exists('+winfixbuf') && &winfixbuf
+    setlocal nowinfixbuf
+  endif
   if l:how ==# 'current'
     enew
   elseif l:how ==# 'vsplit'
