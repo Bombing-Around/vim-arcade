@@ -1,0 +1,141 @@
+*arcade.txt*  Little games inside vim and neovim.                    *vim-arcade*
+
+==============================================================================
+CONTENTS                                                     *arcade-contents*
+
+  1. Intro ................................. |arcade-intro|
+  2. Commands .............................. |arcade-commands|
+  3. 2048 .................................. |arcade-2048|
+  4. Crawl ................................. |arcade-crawl|
+  5. Options ............................... |arcade-options|
+  6. Highlights ............................ |arcade-highlights|
+  7. Extending ............................. |arcade-extending|
+
+==============================================================================
+1. INTRO                                                        *arcade-intro*
+
+vim-arcade renders games into an unmodifiable scratch buffer and drives them
+from buffer-local normal-mode mappings. Requires Vim 8.0+ or any Neovim.
+Written in legacy VimScript so one implementation serves both.
+
+Colour comes from |textprop| (Vim) or extmarks (Neovim); on a build with
+neither, the games still play, just monochrome.
+
+==============================================================================
+2. COMMANDS                                                  *arcade-commands*
+
+                                                                    *:Arcade*
+:Arcade {game}      Start {game}. Completes on "2048" and "crawl".
+
+                                                                *:Arcade2048*
+:Arcade2048         Start 2048.
+
+                                                               *:ArcadeCrawl*
+:ArcadeCrawl        Start the dungeon crawler.
+
+                                                              *:ArcadeScores*
+:ArcadeScores       Print the best score and the last runs of each game.
+
+==============================================================================
+3. 2048                                                          *arcade-2048*
+
+Slide tiles until two equal tiles touch; they merge and score their sum.
+
+    h j k l  <Left> <Down> <Up> <Right>   slide
+    u                                     undo (8 levels)
+    r                                     restart
+    q  <Esc>                              quit
+
+The run is recorded when the board locks up or you quit.
+
+==============================================================================
+4. CRAWL                                                        *arcade-crawl*
+
+A turn-based dungeon. Levels are generated per descent; monsters act only
+when they can see you; field of view is recursive shadowcasting.
+
+    h j k l                               move west/south/north/east
+    y u b n                               move diagonally
+    <Left> <Down> <Up> <Right>            move
+    .                                     wait a turn
+    p                                     drink a potion
+    >                                     descend the stairs you stand on
+    ?                                     toggle help
+    r                                     restart at depth 1
+    q  <Esc>                              quit
+
+Glyphs: >
+    @  you                 >  stairs down       $  gold
+    !  potion              /  weapon (+1 atk)   [  armor (+1 def)
+    "  Amulet of Yendor    r k g o W T D  monsters, ascending nastiness
+<
+Walking into a monster attacks it. Damage is |atk| + 0..2 - target |def|,
+minimum 1. Killing grants xp; levelling raises max hp, heals you somewhat and
+raises attack (and defence every third level). You regain 1 hp every 20
+turns.
+
+Score is gold + 25 per character level + 50 per depth reached, plus 500 for
+carrying out the Amulet of Yendor, which lies on the deepest level
+(|g:arcade_crawl_depth|).
+
+==============================================================================
+5. OPTIONS                                                    *arcade-options*
+
+                                                             *g:arcade_window*
+g:arcade_window        string (default "tab")
+        Where the game surface opens: "tab", "split", "vsplit" or "current".
+
+                                                              *g:arcade_ascii*
+g:arcade_ascii         boolean (default: on unless 'encoding' is utf-8)
+        Draw with ASCII instead of box-drawing characters.
+
+                                                        *g:arcade_crawl_depth*
+g:arcade_crawl_depth   number (default 8)
+        Depth at which the Amulet of Yendor appears.
+
+                                                          *g:arcade_data_dir*
+g:arcade_data_dir      string
+        Where scores.json lives. Defaults to stdpath("data")/vim-arcade on
+        Neovim and $XDG_DATA_HOME/vim-arcade (else ~/.local/share/vim-arcade)
+        on Vim. Score writing is best effort; a read-only path never breaks
+        a game.
+
+==============================================================================
+6. HIGHLIGHTS                                              *arcade-highlights*
+
+All groups are defined with |:highlight-default|, so a colorscheme or your
+vimrc wins. 2048 uses Arcade2048Title, Arcade2048Score, Arcade2048Hint,
+Arcade2048Win, Arcade2048Over, Arcade2048Empty and Arcade2048T{2..4096}.
+Crawl uses ArcadeCrawlStatus, ArcadeCrawlWall, ArcadeCrawlFloor,
+ArcadeCrawlDim, ArcadeCrawlPlayer, ArcadeCrawlMonster, ArcadeCrawlStairs,
+ArcadeCrawlGold, ArcadeCrawlPotion, ArcadeCrawlGear, ArcadeCrawlAmulet,
+ArcadeCrawlLog, ArcadeCrawlLogNew, ArcadeCrawlHint, ArcadeCrawlWin and
+ArcadeCrawlDead.
+
+==============================================================================
+7. EXTENDING                                                *arcade-extending*
+
+|arcade#ui#open()| takes a controller dict and owns the buffer, the mappings
+and the redraw, so a new game only supplies state, a draw function and key
+handlers: >
+
+    function! s:draw(state) abort
+      return {'lines': ['hello'], 'hl': [[0, 0, 5, 'Question']]}
+    endfunction
+
+    function! s:on_key(ctl, key) abort
+      let a:ctl.state.count += 1
+    endfunction
+
+    call arcade#ui#open({
+          \ 'name': 'arcade://demo',
+          \ 'filetype': 'arcadedemo',
+          \ 'state': {'count': 0},
+          \ 'draw': function('s:draw'),
+          \ 'keys': {'<Space>': function('s:on_key')}})
+<
+Highlight spans are [line (0-based), byte start, byte end, group]; the
+surface translates them to text properties or extmarks. Draw functions are
+pure, which is what makes the games testable headlessly (see test/run.vim).
+
+ vim:tw=78:ts=8:ft=help:norl:

@@ -1,0 +1,22 @@
+name: test
+on: [push, pull_request]
+
+jobs:
+  vim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install vim
+        run: sudo apt-get update && sudo apt-get install -y vim
+      - name: Run suite under vim
+        run: vim -Nu NONE -es -S test/run.vim
+
+  neovim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+      - name: Run suite under neovim
+        run: nvim -u NONE -es -S test/run.vim
