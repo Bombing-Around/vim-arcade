@@ -97,6 +97,7 @@ function! arcade#sort#build_level(st) abort
       break
     endif
   endwhile
+  call arcade#sort#refresh(a:st)
   return a:st
 endfunction
 
@@ -218,7 +219,7 @@ function! arcade#sort#move_n(st, src, dst, n) abort
   let a:st.moves += l:n
   let a:st.total_moves += l:n
   let a:st.message = ''
-  call s:after_move(a:st)
+  call arcade#sort#refresh(a:st)
   return l:n
 endfunction
 
@@ -227,16 +228,26 @@ function! arcade#sort#move(st, src, dst) abort
   return arcade#sort#move_n(a:st, a:src, a:dst, 1) > 0
 endfunction
 
-function! s:after_move(st) abort
+" Reads the level off the board: cleared, dead-ended, or still in play.
+" Every action that can change the board ends here, because "the level is
+" over" is a fact about the tubes and not about which key produced them.
+" Hanging it off the move alone left the quieter ways of completing a
+" board -- putting a lifted ball straight back, undoing into place --
+" finishing the level in silence.
+function! arcade#sort#refresh(st) abort
+  if a:st.level_done
+    return 0
+  endif
   if arcade#sort#solved(a:st)
     let a:st.level_done = 1
     let a:st.stuck = 0
     let a:st.cleared += 1
     let a:st.gained = arcade#sort#award(a:st)
     let a:st.score += a:st.gained
-    return
+    return 1
   endif
   let a:st.stuck = arcade#sort#is_stuck(a:st)
+  return 0
 endfunction
 
 " Points for the level just cleared: a flat purse per colour, eaten into by
@@ -307,6 +318,7 @@ function! arcade#sort#grab(st, ...) abort
   let a:st.held_from = a:st.cursor
   call remove(l:tube, len(l:tube) - l:n, -1)
   let a:st.message = ''
+  call arcade#sort#refresh(a:st)
   return l:n
 endfunction
 
@@ -335,6 +347,7 @@ function! arcade#sort#drop(st, ...) abort
   call s:empty_hand(a:st)
   if l:src == l:dst
     let a:st.message = 'Put it back.'
+    call arcade#sort#refresh(a:st)
     return l:n
   endif
   let l:moved = arcade#sort#move_n(a:st, l:src, l:dst,
@@ -346,6 +359,7 @@ function! arcade#sort#drop(st, ...) abort
     let a:st.held_n = l:left
     let a:st.held_from = l:src
   endif
+  call arcade#sort#refresh(a:st)
   if l:moved > 0
     if l:left > 0
       let a:st.message = printf('%d still in hand.', l:left)
@@ -376,6 +390,7 @@ function! arcade#sort#undo(st) abort
     call extend(a:st.tubes[a:st.held_from], repeat([a:st.held], a:st.held_n))
     call s:empty_hand(a:st)
     let a:st.message = 'Put it back.'
+    call arcade#sort#refresh(a:st)
     return 1
   endif
   if a:st.level_done || empty(a:st.history)
@@ -387,6 +402,7 @@ function! arcade#sort#undo(st) abort
   let a:st.moves = l:prev.moves
   let a:st.stuck = 0
   let a:st.message = 'Undid one move.'
+  call arcade#sort#refresh(a:st)
   return 1
 endfunction
 

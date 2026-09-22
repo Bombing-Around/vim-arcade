@@ -472,6 +472,42 @@ function! s:test_sort_move_n() abort
   call s:eq(arcade#sort#move_n(l:st, 2, 3, 0), 0, 'a zero move is no move')
 endfunction
 
+" A finished board announces itself however it got finished -- the clear
+" is a fact about the tubes, not about which key laid the last ball.
+function! s:test_sort_clear_every_path() abort
+  " Put-back: lift the last ball off a finished tube and drop it straight
+  " back where it came from.
+  let l:st = arcade#sort#new(41)
+  let l:st.colors = 2
+  let l:st.par = 8
+  let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2, 2], [], []]
+  let l:st.level_done = 0
+  let l:st.cursor = 0
+  call s:eq(arcade#sort#grab(l:st, 1), 1, 'lift a ball off a finished tube')
+  call s:ok(!l:st.level_done, 'not clear while a ball is in hand')
+  call s:eq(arcade#sort#drop(l:st), 1, 'put it straight back')
+  call s:ok(l:st.level_done, 'a put-back that completes the board clears it')
+
+  " Undo: walk a ball out of place and undo back into a finished board.
+  let l:st2 = arcade#sort#new(42)
+  let l:st2.colors = 2
+  let l:st2.par = 8
+  let l:st2.tubes = [[1, 1, 1, 1], [2, 2, 2, 2], [], []]
+  let l:st2.level_done = 0
+  call s:ok(arcade#sort#move(l:st2, 1, 2), 'move a ball out of a finished tube')
+  call s:ok(!l:st2.level_done, 'board is not finished any more')
+  call s:ok(arcade#sort#undo(l:st2), 'undo it back')
+  call s:ok(l:st2.level_done, 'an undo that completes the board clears it')
+
+  " And the award only lands once, however many times the board is read.
+  let l:score = l:st2.score
+  let l:cleared = l:st2.cleared
+  call arcade#sort#refresh(l:st2)
+  call arcade#sort#refresh(l:st2)
+  call s:eq(l:st2.score, l:score, 'a cleared level pays out once')
+  call s:eq(l:st2.cleared, l:cleared, 'and counts once')
+endfunction
+
 " Clearing a level through the hand, the way it is actually played. The
 " board-level test below drives arcade#sort#move directly and so cannot
 " see a hand that is still holding balls when the last one lands.
@@ -676,7 +712,7 @@ let s:tests = [
       \ 's:test_sort_levels_are_playable', 's:test_sort_draw',
       \ 's:test_sort_run_length', 's:test_sort_stack_grab', 's:test_sort_count_grab',
       \ 's:test_sort_partial_drop', 's:test_sort_refused_drop_keeps_hand',
-      \ 's:test_sort_move_n', 's:test_sort_clear_by_hand',
+      \ 's:test_sort_move_n', 's:test_sort_clear_every_path', 's:test_sort_clear_by_hand',
       \ 's:test_sort_stuck_by_hand', 's:test_sort_solvable_by_hand',
       \ 's:test_sort_solvable', 's:test_sort_playout', 's:test_surface']
 
