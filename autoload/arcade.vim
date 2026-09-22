@@ -3,6 +3,7 @@
 let s:GAMES = {
       \ '2048':  {'start': 'arcade#twenty48#start', 'label': '2048'},
       \ 'crawl': {'start': 'arcade#crawl#start',    'label': 'dungeon crawl'},
+      \ 'sort':  {'start': 'arcade#sort#start',     'label': 'ball sort'},
       \ }
 
 function! arcade#complete(lead, ...) abort

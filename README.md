@@ -1,11 +1,12 @@
 # vim-arcade
 
-Two small games that run inside a Vim or Neovim buffer: **2048** and a
-turn-based **dungeon crawler**. One legacy-VimScript implementation serves both
-editors — no Lua, no Vim9, no external process, no dependencies.
+Three small games that run inside a Vim or Neovim buffer: **2048**, a
+turn-based **dungeon crawler**, and a **ball sort** puzzle. One
+legacy-VimScript implementation serves both editors — no Lua, no Vim9, no
+external process, no dependencies.
 
 ```
-:Arcade2048          :ArcadeCrawl          :ArcadeScores
+:Arcade2048    :ArcadeCrawl    :ArcadeSort    :ArcadeScores
 ```
 
 ## Install
@@ -17,7 +18,7 @@ Any plugin manager, or just drop the directory on your `runtimepath`.
 Plug 'Bombing-Around/vim-arcade'
 
 " lazy.nvim
-{ 'Bombing-Around/vim-arcade', cmd = { 'Arcade', 'Arcade2048', 'ArcadeCrawl' } }
+{ 'Bombing-Around/vim-arcade', cmd = { 'Arcade', 'Arcade2048', 'ArcadeCrawl', 'ArcadeSort' } }
 ```
 
 Requires Vim 8.0+ or Neovim. Colour uses text properties (Vim) or extmarks
@@ -35,6 +36,29 @@ Scores persist between sessions.
 descent, field of view is recursive shadowcasting, monsters only act when they
 can see you. Reach depth 8, grab the Amulet of Yendor (`"`), and the run is a
 win.
+
+## Sort
+
+Tubes of coloured balls; stack every colour into a tube of its own. `h`/`l` or
+the arrows walk the hand between tubes, `<Space>` lifts the top ball and
+`<Space>` drops it again, `u` undoes, `r` reshuffles, `q` quits. A ball only
+drops onto an empty tube or onto its own colour, and each colour is a distinct
+shape as well, so the board still reads without colour.
+
+```
+            ◆
+│ │ │◆│ │ │ │ │ │ │ │◆│
+│ │ │▲│ │■│ │ │ │ │ │▲│
+│ │ │▲│ │■│ │●│ │●│ │■│
+│ │ │▲│ │■│ │●│ │●│ │◆│
+╰─╯ ╰─╯ ╰─╯ ╰─╯ ╰─╯ ╰─╯
+            ▲
+```
+
+Levels run from four colours to nine, two spare tubes throughout. Each one is
+dealt by walking backwards from a solved board along inverted moves, so every
+level is winnable — though a careless line still strands the board, which is
+what `u` is for.
 
 ## Options
 

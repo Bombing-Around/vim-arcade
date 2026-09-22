@@ -175,6 +175,243 @@ function! s:test_crawl_playout() abort
   call s:check_frame(arcade#crawl#draw(l:st), 'crawl help draw')
 endfunction
 
+" ------------------------------------------------------------------- sort
+
+function! s:tube_counts(st) abort
+  let l:counts = {}
+  for l:tube in a:st.tubes
+    for l:ball in l:tube
+      let l:counts[l:ball] = get(l:counts, l:ball, 0) + 1
+    endfor
+  endfor
+  return l:counts
+endfunction
+
+" Tubes holding more than one colour. A generator bug that only shuffles
+" whole colours between tubes leaves this at zero and hands out boards
+" that are already all but solved.
+function! s:mixed_tubes(st) abort
+  let l:mixed = 0
+  for l:tube in a:st.tubes
+    for l:ball in l:tube
+      if l:ball != l:tube[0]
+        let l:mixed += 1
+        break
+      endif
+    endfor
+  endfor
+  return l:mixed
+endfunction
+
+function! s:test_sort_level() abort
+  let l:st = arcade#sort#new(17)
+  call s:eq(l:st.level, 1, 'first level')
+  call s:eq(l:st.colors, 4, 'level one has four colours')
+  call s:eq(len(l:st.tubes), 6, 'colours plus two free tubes')
+  call s:eq(s:tube_counts(l:st), {1: 4, 2: 4, 3: 4, 4: 4}, 'four balls of every colour')
+  call s:ok(s:mixed_tubes(l:st) >= 2, 'the deal actually mixes colours together')
+  call s:ok(!arcade#sort#solved(l:st), 'a fresh level is not already solved')
+  call s:ok(!arcade#sort#is_stuck(l:st), 'a fresh level has a legal move')
+  for l:tube in l:st.tubes
+    call s:ok(len(l:tube) <= 4, 'no tube overflows')
+  endfor
+endfunction
+
+function! s:test_sort_rules() abort
+  let l:st = arcade#sort#new(3)
+  let l:st.tubes = [[1, 1], [2], [], [1, 1, 1, 1]]
+  call s:ok(arcade#sort#can_move(l:st, 0, 2), 'anything fits an empty tube')
+  call s:ok(!arcade#sort#can_move(l:st, 0, 1), 'colours must match')
+  call s:ok(arcade#sort#can_move(l:st, 1, 2), 'empty tube accepts any colour')
+  call s:ok(!arcade#sort#can_move(l:st, 0, 3), 'a full tube takes nothing')
+  call s:ok(!arcade#sort#can_move(l:st, 2, 0), 'an empty tube gives nothing')
+  call s:ok(!arcade#sort#can_move(l:st, 0, 0), 'a tube cannot feed itself')
+  call s:ok(!arcade#sort#can_move(l:st, 0, 9), 'out of range is not a move')
+
+  call s:ok(arcade#sort#move(l:st, 0, 2), 'legal move applies')
+  call s:eq(l:st.tubes[0], [1], 'ball left the source')
+  call s:eq(l:st.tubes[2], [1], 'ball landed on the target')
+  call s:eq(l:st.moves, 1, 'move counted')
+  call s:ok(!arcade#sort#move(l:st, 0, 1), 'illegal move is rejected')
+  call s:eq(l:st.moves, 1, 'rejected move costs nothing')
+
+  call s:ok(arcade#sort#undo(l:st), 'undo restores the board')
+  call s:eq(l:st.tubes[0], [1, 1], 'source is whole again')
+  call s:eq(l:st.moves, 0, 'undo rewinds the move count')
+  call s:ok(!arcade#sort#undo(l:st), 'undo with no history is a no-op')
+endfunction
+
+function! s:test_sort_hand() abort
+  let l:st = arcade#sort#new(4)
+  let l:st.tubes = [[1, 2], [2], [], [3, 3, 3, 3]]
+  let l:st.cursor = 0
+
+  call s:ok(arcade#sort#grab(l:st), 'space lifts the top ball')
+  call s:eq(l:st.held, 2, 'the lifted ball is the top one')
+  call s:eq(l:st.tubes[0], [1], 'lifted ball leaves the tube')
+  call s:ok(!arcade#sort#grab(l:st), 'only one ball in hand at a time')
+
+  let l:st.cursor = 3
+  call s:ok(!arcade#sort#drop(l:st), 'cannot drop onto a full tube')
+  call s:eq(l:st.held, 2, 'a refused drop keeps the ball in hand')
+
+  let l:st.cursor = 1
+  call s:ok(arcade#sort#drop(l:st), 'drop onto a matching top works')
+  call s:eq(l:st.held, -1, 'hand is empty after a drop')
+  call s:eq(l:st.tubes[1], [2, 2], 'ball stacked on its own colour')
+
+  let l:st.cursor = 0
+  call arcade#sort#grab(l:st)
+  call s:ok(arcade#sort#drop(l:st), 'dropping a ball back where it came from works')
+  call s:eq(l:st.tubes[0], [1], 'put-back leaves the tube unchanged')
+  call s:eq(l:st.moves, 1, 'put-back costs no move')
+
+  call arcade#sort#grab(l:st)
+  call s:ok(arcade#sort#undo(l:st), 'undo with a full hand puts the ball back')
+  call s:eq(l:st.tubes[0], [1], 'undo returned the held ball')
+
+  let l:n = len(l:st.tubes)
+  let l:st.cursor = 0
+  call arcade#sort#cursor_move(l:st, -1)
+  call s:eq(l:st.cursor, l:n - 1, 'cursor wraps left')
+  call arcade#sort#cursor_move(l:st, 1)
+  call s:eq(l:st.cursor, 0, 'cursor wraps right')
+endfunction
+
+function! s:test_sort_clear() abort
+  let l:st = arcade#sort#new(8)
+  let l:st.colors = 2
+  let l:st.par = 8
+  let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  let l:st.cursor = 2
+  call s:ok(!arcade#sort#solved(l:st), 'a split colour is not solved')
+  call s:ok(arcade#sort#move(l:st, 2, 1), 'last ball goes home')
+  call s:ok(arcade#sort#solved(l:st), 'board is solved')
+  call s:ok(l:st.level_done, 'level marked clear')
+  call s:ok(l:st.score > 0, 'clearing a level scores')
+  call s:ok(!arcade#sort#move(l:st, 0, 3), 'a cleared board takes no more moves')
+
+  let l:level = l:st.level
+  call s:ok(arcade#sort#next_level(l:st), 'space advances')
+  call s:eq(l:st.level, l:level + 1, 'level advanced')
+  call s:eq(l:st.moves, 0, 'move count resets per level')
+  call s:ok(!l:st.level_done, 'new level is unsolved')
+  call s:ok(empty(l:st.history), 'undo history does not cross levels')
+endfunction
+
+function! s:test_sort_stuck() abort
+  let l:st = arcade#sort#new(6)
+  let l:st.tubes = [[1, 2, 1, 2], [2, 1, 2, 1], [1, 2, 1, 2], [2, 1, 2, 1]]
+  call s:ok(arcade#sort#is_stuck(l:st), 'full mismatched tubes are stuck')
+  let l:st.held = 1
+  call s:ok(!arcade#sort#is_stuck(l:st), 'a ball in hand is never stuck')
+endfunction
+
+" The generator walks backwards from a solved board, so every level it
+" hands out has to be complete, mixed, and open to a legal move.
+function! s:test_sort_levels_are_playable() abort
+  let l:st = arcade#sort#new(2718)
+  for l:i in range(6)
+    call s:ok(!arcade#sort#solved(l:st), printf('level %d is not pre-solved', l:st.level))
+    call s:ok(!arcade#sort#is_stuck(l:st), printf('level %d opens with a legal move', l:st.level))
+    call s:eq(len(l:st.tubes), l:st.colors + 2, 'two free tubes at every level')
+    let l:want = {}
+    for l:c in range(1, l:st.colors)
+      let l:want[l:c] = 4
+    endfor
+    call s:eq(s:tube_counts(l:st), l:want, 'every colour is complete')
+    call s:ok(s:mixed_tubes(l:st) >= l:st.colors / 2,
+          \ printf('level %d is properly mixed', l:st.level))
+    call s:check_frame(arcade#sort#draw(l:st), 'sort draw')
+    let l:st.level += 1
+    call arcade#sort#build_level(l:st)
+  endfor
+  call s:eq(l:st.colors, 9, 'colour count tops out')
+endfunction
+
+function! s:test_sort_draw() abort
+  let l:st = arcade#sort#new(21)
+  call s:check_frame(arcade#sort#draw(l:st), 'sort draw')
+  let l:st.held = 1
+  let l:st.held_from = 0
+  let l:st.cursor = 2
+  call s:check_frame(arcade#sort#draw(l:st), 'sort draw with a ball in hand')
+  let l:st.held = -1
+  let l:st.level_done = 1
+  call s:check_frame(arcade#sort#draw(l:st), 'sort clear banner')
+  let l:st.level_done = 0
+  let l:st.stuck = 1
+  call s:check_frame(arcade#sort#draw(l:st), 'sort stuck banner')
+  let l:st.stuck = 0
+  let l:st.message = 'That tube is empty.'
+  call s:check_frame(arcade#sort#draw(l:st), 'sort message')
+
+  " Widest board: nine colours plus two free tubes.
+  let l:wide = arcade#sort#new(5)
+  let l:wide.level = 9
+  call arcade#sort#build_level(l:wide)
+  let l:widths = map(copy(arcade#sort#draw(l:wide).lines), 'strdisplaywidth(v:val)')
+  call s:ok(max(l:widths) < 72, 'sort board fits a modest window')
+  call s:check_frame(arcade#sort#draw(l:wide), 'sort wide draw')
+endfunction
+
+" The generator hands out the un-move walk it dealt from; replayed
+" forwards it has to be a legal, winning line of play.
+function! s:test_sort_solvable() abort
+  let l:st = arcade#sort#new(451)
+  for l:level in range(3)
+    call s:ok(len(l:st.solution) > 0, 'level ships a solution')
+    let l:play = deepcopy(l:st)
+    for l:mv in l:st.solution
+      call arcade#sort#move(l:play, l:mv[0], l:mv[1])
+    endfor
+    call s:ok(arcade#sort#solved(l:play),
+          \ printf('level %d solves along its own line', l:st.level))
+    call s:ok(l:play.level_done, 'solving the board clears the level')
+    let l:st.level += 1
+    call arcade#sort#build_level(l:st)
+  endfor
+endfunction
+
+" Thousands of real moves through move/undo/solved, checking the board
+" stays a legal board the whole way.
+function! s:test_sort_playout() abort
+  let l:st = arcade#sort#new(1009)
+  let l:want = s:tube_counts(l:st)
+  let l:last = [-1, -1]
+  let l:i = 0
+  while l:i < 600 && !l:st.level_done
+    let l:legal = []
+    for l:src in range(len(l:st.tubes))
+      for l:dst in range(len(l:st.tubes))
+        if arcade#sort#can_move(l:st, l:src, l:dst)
+              \ && !(l:src == l:last[1] && l:dst == l:last[0])
+          call add(l:legal, [l:src, l:dst])
+        endif
+      endfor
+    endfor
+    if empty(l:legal)
+      call s:ok(arcade#sort#is_stuck(l:st) || l:st.level_done,
+            \ 'no moves left means stuck or solved')
+      break
+    endif
+    let l:pick = l:legal[arcade#util#rng_int(l:st.rng, len(l:legal))]
+    call s:ok(arcade#sort#move(l:st, l:pick[0], l:pick[1]), 'legal move applies')
+    let l:last = l:pick
+    if arcade#util#rng_chance(l:st.rng, 15)
+      call arcade#sort#undo(l:st)
+      let l:last = [-1, -1]
+    endif
+    for l:tube in l:st.tubes
+      call s:ok(len(l:tube) <= 4, 'no tube overflows mid-playout')
+    endfor
+    call s:eq(s:tube_counts(l:st), l:want, 'balls are conserved')
+    let l:i += 1
+  endwhile
+  call s:ok(l:st.moves > 0, 'playout made moves')
+  call s:check_frame(arcade#sort#draw(l:st), 'sort playout draw')
+endfunction
+
 function! s:test_rng_determinism() abort
   let l:a = arcade#util#rng_new(7)
   let l:b = arcade#util#rng_new(7)
@@ -185,6 +422,7 @@ function! s:test_rng_determinism() abort
   call s:eq(arcade#util#rng_int(l:a, 1), 0, 'rng_int(1) is always 0')
   call s:eq(strdisplaywidth(arcade#util#center('2', 7)), 7, 'center pads to width')
 endfunction
+
 
 " ------------------------------------------------------------------- buffer
 
@@ -206,6 +444,24 @@ function! s:test_surface() abort
   call s:eq(b:arcade.state.moves, 0, 'restart resets the run')
   silent! bwipeout!
 
+  let l:bufnr = arcade#sort#start(13)
+  call s:ok(len(getbufline(l:bufnr, 1, '$')) > 8, 'sort surface rendered')
+  call s:ok(!empty(maparg('<Space>', 'n')), 'space is mapped')
+  let l:cursor = b:arcade.state.cursor
+  call arcade#ui#key('l')
+  call s:eq(b:arcade.state.cursor, l:cursor + 1, 'l walks the cursor right')
+  for l:i in range(len(b:arcade.state.tubes))
+    if !empty(b:arcade.state.tubes[l:i])
+      let b:arcade.state.cursor = l:i
+      break
+    endif
+  endfor
+  call arcade#ui#key('<Space>')
+  call s:ok(b:arcade.state.held >= 0, 'space lifts a ball')
+  call arcade#ui#key('<Space>')
+  call s:eq(b:arcade.state.held, -1, 'space puts it back down')
+  silent! bwipeout!
+
   let l:bufnr = arcade#crawl#start(12)
   call s:ok(len(getbufline(l:bufnr, 1, '$')) > 20, 'crawl surface rendered')
   call arcade#ui#key('?')
@@ -220,7 +476,10 @@ endfunction
 let s:tests = [
       \ 's:test_rng_determinism', 's:test_collapse', 's:test_move', 's:test_game_over',
       \ 's:test_undo', 's:test_2048_playout', 's:test_crawl_level', 's:test_crawl_actions',
-      \ 's:test_crawl_playout', 's:test_surface']
+      \ 's:test_crawl_playout', 's:test_sort_level', 's:test_sort_rules',
+      \ 's:test_sort_hand', 's:test_sort_clear', 's:test_sort_stuck',
+      \ 's:test_sort_levels_are_playable', 's:test_sort_draw',
+      \ 's:test_sort_solvable', 's:test_sort_playout', 's:test_surface']
 
 for s:name in s:tests
   try

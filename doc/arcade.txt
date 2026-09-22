@@ -7,9 +7,10 @@ CONTENTS                                                     *arcade-contents*
   2. Commands .............................. |arcade-commands|
   3. 2048 .................................. |arcade-2048|
   4. Crawl ................................. |arcade-crawl|
-  5. Options ............................... |arcade-options|
-  6. Highlights ............................ |arcade-highlights|
-  7. Extending ............................. |arcade-extending|
+  5. Sort .................................. |arcade-sort|
+  6. Options ............................... |arcade-options|
+  7. Highlights ............................ |arcade-highlights|
+  8. Extending ............................. |arcade-extending|
 
 ==============================================================================
 1. INTRO                                                        *arcade-intro*
@@ -25,13 +26,16 @@ neither, the games still play, just monochrome.
 2. COMMANDS                                                  *arcade-commands*
 
                                                                     *:Arcade*
-:Arcade {game}      Start {game}. Completes on "2048" and "crawl".
+:Arcade {game}      Start {game}. Completes on "2048", "crawl" and "sort".
 
                                                                 *:Arcade2048*
 :Arcade2048         Start 2048.
 
                                                                *:ArcadeCrawl*
 :ArcadeCrawl        Start the dungeon crawler.
+
+                                                                *:ArcadeSort*
+:ArcadeSort         Start the ball sort puzzle.
 
                                                               *:ArcadeScores*
 :ArcadeScores       Print the best score and the last runs of each game.
@@ -83,7 +87,32 @@ carrying out the Amulet of Yendor, which lies on the deepest level
 (|g:arcade_crawl_depth|).
 
 ==============================================================================
-5. OPTIONS                                                    *arcade-options*
+5. SORT                                                          *arcade-sort*
+
+Tubes of coloured balls, one hand. Stack every colour into a tube of its own.
+
+    h l  <Left> <Right>                   move the hand between tubes
+    <Space>  <CR>                         lift the top ball, or drop it
+    u                                     undo (32 moves; returns a held ball)
+    r                                     reshuffle this level
+    q  <Esc>                              quit
+
+A ball drops onto an empty tube, or onto a tube whose top ball is the same
+colour and which still has room; dropping it back where it came from is
+always allowed and costs no move. Each colour is also a distinct shape, so
+the board reads on a monochrome build.
+
+Levels run from four colours up to nine, always with two spare tubes.
+Clearing one pays 100 per colour, less 5 for every move past par (colours x
+4), never less than a quarter of the purse. A level is dealt by walking
+backwards from a solved board along inverted moves, so every level is
+winnable -- but a careless line of play can still strand the board with no
+legal move, which is what |u| is for.
+
+The run is recorded when you quit.
+
+==============================================================================
+6. OPTIONS                                                    *arcade-options*
 
                                                              *g:arcade_window*
 g:arcade_window        string (default "tab")
@@ -105,7 +134,7 @@ g:arcade_data_dir      string
         a game.
 
 ==============================================================================
-6. HIGHLIGHTS                                              *arcade-highlights*
+7. HIGHLIGHTS                                              *arcade-highlights*
 
 All groups are defined with |:highlight-default|, so a colorscheme or your
 vimrc wins. 2048 uses Arcade2048Title, Arcade2048Score, Arcade2048Hint,
@@ -114,10 +143,12 @@ Crawl uses ArcadeCrawlStatus, ArcadeCrawlWall, ArcadeCrawlFloor,
 ArcadeCrawlDim, ArcadeCrawlPlayer, ArcadeCrawlMonster, ArcadeCrawlStairs,
 ArcadeCrawlGold, ArcadeCrawlPotion, ArcadeCrawlGear, ArcadeCrawlAmulet,
 ArcadeCrawlLog, ArcadeCrawlLogNew, ArcadeCrawlHint, ArcadeCrawlWin and
-ArcadeCrawlDead.
+ArcadeCrawlDead. Sort uses ArcadeSortTitle, ArcadeSortScore, ArcadeSortHint,
+ArcadeSortTube, ArcadeSortCursor, ArcadeSortMsg, ArcadeSortWin,
+ArcadeSortStuck and ArcadeSortC{1..9} for the ball colours.
 
 ==============================================================================
-7. EXTENDING                                                *arcade-extending*
+8. EXTENDING                                                *arcade-extending*
 
 |arcade#ui#open()| takes a controller dict and owns the buffer, the mappings
 and the redraw, so a new game only supplies state, a draw function and key
