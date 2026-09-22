@@ -472,6 +472,73 @@ function! s:test_sort_move_n() abort
   call s:eq(arcade#sort#move_n(l:st, 2, 3, 0), 0, 'a zero move is no move')
 endfunction
 
+" Clearing a level through the hand, the way it is actually played. The
+" board-level test below drives arcade#sort#move directly and so cannot
+" see a hand that is still holding balls when the last one lands.
+function! s:test_sort_clear_by_hand() abort
+  let l:st = arcade#sort#new(36)
+  let l:st.colors = 2
+  let l:st.par = 8
+  let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  let l:st.cursor = 2
+  call s:eq(arcade#sort#grab(l:st), 1, 'lift the stray ball')
+  let l:st.cursor = 1
+  call s:eq(arcade#sort#drop(l:st), 1, 'drop it home')
+  call s:ok(arcade#sort#solved(l:st), 'board is solved')
+  call s:ok(l:st.level_done, 'level clears when the last ball lands from the hand')
+  call s:ok(l:st.score > 0, 'and it pays out')
+
+  " Same thing with a handful rather than a single ball.
+  let l:st2 = arcade#sort#new(37)
+  let l:st2.colors = 2
+  let l:st2.par = 8
+  let l:st2.tubes = [[1, 1, 1, 1], [2], [2, 2, 2], []]
+  let l:st2.cursor = 2
+  call s:eq(arcade#sort#grab(l:st2), 3, 'lift the run')
+  let l:st2.cursor = 1
+  call s:eq(arcade#sort#drop(l:st2), 3, 'drop the run home')
+  call s:ok(l:st2.level_done, 'a handful clears the level too')
+endfunction
+
+" Stuck is read off the board, so it has the same problem: a hand that
+" still holds balls during the move hides it.
+function! s:test_sort_stuck_by_hand() abort
+  let l:st = arcade#sort#new(38)
+  " Only tube 0 will have room once the ball in hand lands, and no other
+  " tube's top matches what tube 0 is showing.
+  let l:st.tubes = [[1, 2, 1, 3], [2, 1, 2, 4], [3, 4, 3, 2], [4, 4, 3]]
+  let l:st.cursor = 0
+  call s:eq(arcade#sort#grab(l:st), 1, 'lift the top ball')
+  call s:ok(!arcade#sort#is_stuck(l:st), 'a hand with a ball in it is never stuck')
+  let l:st.cursor = 3
+  call s:eq(arcade#sort#drop(l:st), 1, 'land it on its colour')
+  call s:ok(l:st.stuck, 'the dead end is noticed once the hand is empty')
+  call s:ok(!l:st.level_done, 'a dead end is not a clear')
+  call s:ok(arcade#sort#undo(l:st), 'and undo walks back out of it')
+  call s:ok(!l:st.stuck, 'the flag clears with the undo')
+endfunction
+
+" Every level, played out along its own solution through grab and drop
+" rather than through arcade#sort#move: the path a real game takes.
+function! s:test_sort_solvable_by_hand() abort
+  let l:st = arcade#sort#new(452)
+  for l:level in range(2)
+    let l:play = deepcopy(l:st)
+    for l:mv in l:st.solution
+      let l:play.cursor = l:mv[0]
+      call arcade#sort#grab(l:play, 1)
+      let l:play.cursor = l:mv[1]
+      call arcade#sort#drop(l:play)
+    endfor
+    call s:ok(arcade#sort#solved(l:play), 'playing the solution by hand solves it')
+    call s:ok(l:play.level_done, 'and clears the level')
+    call s:eq(l:play.held_n, 0, 'with nothing left in hand')
+    call s:ok(arcade#sort#next_level(l:play), 'and the next level is reachable')
+    let l:st.level += 1
+    call arcade#sort#build_level(l:st)
+  endfor
+endfunction
+
 " The generator hands out the un-move walk it dealt from; replayed
 " forwards it has to be a legal, winning line of play.
 function! s:test_sort_solvable() abort
@@ -609,7 +676,8 @@ let s:tests = [
       \ 's:test_sort_levels_are_playable', 's:test_sort_draw',
       \ 's:test_sort_run_length', 's:test_sort_stack_grab', 's:test_sort_count_grab',
       \ 's:test_sort_partial_drop', 's:test_sort_refused_drop_keeps_hand',
-      \ 's:test_sort_move_n',
+      \ 's:test_sort_move_n', 's:test_sort_clear_by_hand',
+      \ 's:test_sort_stuck_by_hand', 's:test_sort_solvable_by_hand',
       \ 's:test_sort_solvable', 's:test_sort_playout', 's:test_surface']
 
 for s:name in s:tests

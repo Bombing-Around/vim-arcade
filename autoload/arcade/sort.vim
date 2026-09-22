@@ -326,9 +326,14 @@ function! arcade#sort#drop(st, ...) abort
   " rules -- and lands in the same undo snapshot -- as any other move.
   " The snapshot has to hold the balls still in hand too, or undoing a
   " partial drop would lose them.
+  "
+  " The hand has to be empty for the move itself: the board is only
+  " solved with every ball in a tube, so a move made with a handful
+  " still recorded in the state can never clear the level. Anything
+  " left over is lifted back off below.
   call extend(a:st.tubes[l:src], repeat([l:ball], l:n))
+  call s:empty_hand(a:st)
   if l:src == l:dst
-    call s:empty_hand(a:st)
     let a:st.message = 'Put it back.'
     return l:n
   endif
@@ -340,8 +345,6 @@ function! arcade#sort#drop(st, ...) abort
     let a:st.held = l:ball
     let a:st.held_n = l:left
     let a:st.held_from = l:src
-  else
-    call s:empty_hand(a:st)
   endif
   if l:moved > 0
     if l:left > 0
@@ -499,8 +502,8 @@ function! arcade#sort#draw(st) abort
   call add(l:lines, '')
 
   if a:st.level_done
-    let l:banner = printf('LEVEL CLEAR  +%d in %d moves  --  space for the next one',
-          \ a:st.gained, a:st.moves)
+    let l:banner = printf('LEVEL CLEAR  +%d in %d move%s  --  space for the next one',
+          \ a:st.gained, a:st.moves, a:st.moves == 1 ? '' : 's')
     call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:banner), 'ArcadeSortWin'])
     call add(l:lines, l:margin . l:banner)
   elseif a:st.stuck
