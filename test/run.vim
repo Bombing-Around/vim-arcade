@@ -283,14 +283,13 @@ endfunction
 function! s:test_sort_clear() abort
   let l:st = arcade#sort#new(8)
   let l:st.colors = 2
-  let l:st.par = 8
   let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
   let l:st.cursor = 2
   call s:ok(!arcade#sort#solved(l:st), 'a split colour is not solved')
   call s:ok(arcade#sort#move(l:st, 2, 1), 'last ball goes home')
   call s:ok(arcade#sort#solved(l:st), 'board is solved')
   call s:ok(l:st.level_done, 'level marked clear')
-  call s:ok(l:st.score > 0, 'clearing a level scores')
+  call s:eq(l:st.cleared, 1, 'and counts as cleared')
   call s:ok(!arcade#sort#move(l:st, 0, 3), 'a cleared board takes no more moves')
 
   let l:level = l:st.level
@@ -358,6 +357,11 @@ function! s:test_sort_draw() abort
   call arcade#sort#build_level(l:wide)
   let l:widths = map(copy(arcade#sort#draw(l:wide).lines), 'strdisplaywidth(v:val)')
   call s:ok(max(l:widths) < 72, 'sort board fits a modest window')
+  " Widest it can ever be: nine colours, two free tubes, two spares.
+  call arcade#sort#spare(l:wide)
+  call arcade#sort#spare(l:wide)
+  let l:widest = map(copy(arcade#sort#draw(l:wide).lines), 'strdisplaywidth(v:val)')
+  call s:ok(max(l:widest) < 72, 'and still fits with both spares out')
   call s:check_frame(arcade#sort#draw(l:wide), 'sort wide draw')
 endfunction
 
@@ -481,7 +485,6 @@ function! s:test_sort_clear_every_path() abort
   " back where it came from.
   let l:st = arcade#sort#new(41)
   let l:st.colors = 2
-  let l:st.par = 8
   let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2, 2], [], []]
   let l:st.level_done = 0
   let l:st.cursor = 0
@@ -493,7 +496,6 @@ function! s:test_sort_clear_every_path() abort
   " Undo: walk a ball out of place and undo back into a finished board.
   let l:st2 = arcade#sort#new(42)
   let l:st2.colors = 2
-  let l:st2.par = 8
   let l:st2.tubes = [[1, 1, 1, 1], [2, 2, 2, 2], [], []]
   let l:st2.level_done = 0
   call s:ok(arcade#sort#move(l:st2, 1, 2), 'move a ball out of a finished tube')
@@ -502,12 +504,10 @@ function! s:test_sort_clear_every_path() abort
   call s:ok(l:st2.level_done, 'an undo that completes the board clears it')
 
   " And the award only lands once, however many times the board is read.
-  let l:score = l:st2.score
   let l:cleared = l:st2.cleared
   call arcade#sort#refresh(l:st2)
   call arcade#sort#refresh(l:st2)
-  call s:eq(l:st2.score, l:score, 'a cleared level pays out once')
-  call s:eq(l:st2.cleared, l:cleared, 'and counts once')
+  call s:eq(l:st2.cleared, l:cleared, 'a cleared level counts once')
 endfunction
 
 " Clearing a level through the hand, the way it is actually played. The
@@ -516,7 +516,6 @@ endfunction
 function! s:test_sort_clear_by_hand() abort
   let l:st = arcade#sort#new(36)
   let l:st.colors = 2
-  let l:st.par = 8
   let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
   let l:st.cursor = 2
   call s:eq(arcade#sort#grab(l:st), 1, 'lift the stray ball')
@@ -524,12 +523,11 @@ function! s:test_sort_clear_by_hand() abort
   call s:eq(arcade#sort#drop(l:st), 1, 'drop it home')
   call s:ok(arcade#sort#solved(l:st), 'board is solved')
   call s:ok(l:st.level_done, 'level clears when the last ball lands from the hand')
-  call s:ok(l:st.score > 0, 'and it pays out')
+  call s:eq(l:st.cleared, 1, 'and counts as cleared')
 
   " Same thing with a handful rather than a single ball.
   let l:st2 = arcade#sort#new(37)
   let l:st2.colors = 2
-  let l:st2.par = 8
   let l:st2.tubes = [[1, 1, 1, 1], [2], [2, 2, 2], []]
   let l:st2.cursor = 2
   call s:eq(arcade#sort#grab(l:st2), 3, 'lift the run')
@@ -646,6 +644,158 @@ function! s:test_rng_determinism() abort
 endfunction
 
 
+" ------------------------------------------------------- zen and helping
+
+function! s:test_sort_zen() abort
+  call arcade#score#reset('sort')
+  let l:st = arcade#sort#new(71)
+  call s:ok(!l:st.zen, 'scoring is the default')
+  call s:ok(arcade#sort#zen(l:st), 'z toggles zen')
+  call s:ok(l:st.zen, 'zen is on')
+  call s:eq(l:st.level_best, 0, 'zen shows no record to beat')
+
+  " A level cleared in zen leaves nothing behind.
+  let l:st.colors = 2
+  let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  call s:ok(arcade#sort#move(l:st, 2, 1), 'clear it')
+  call s:ok(l:st.level_done, 'the level clears in zen too')
+  call s:eq(arcade#score#level_best('sort', l:st.level), 0, 'zen records no best')
+
+  " And nothing at the end of the run either.
+  let l:st.recorded = 0
+  call arcade#sort#zen(l:st)
+  call s:ok(!l:st.zen, 'and back off again')
+
+  let g:arcade_sort_zen = 1
+  let l:zen = arcade#sort#new(72)
+  call s:ok(l:zen.zen, 'g:arcade_sort_zen starts a run in zen')
+  unlet g:arcade_sort_zen
+  call arcade#score#reset('sort')
+endfunction
+
+" The move count is the score now, so a level keeps its own record.
+function! s:test_sort_level_best() abort
+  call arcade#score#reset('sort')
+  let l:st = arcade#sort#new(73)
+  let l:st.colors = 2
+  let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  let l:st.moves = 12
+  call s:ok(arcade#sort#move(l:st, 2, 1), 'clear the level')
+  call s:ok(!l:st.beat_best, 'a first clear has no record to beat')
+  call s:eq(arcade#score#level_best('sort', 1), 13, 'but is written down')
+
+  " Clear it again, worse: the record stands.
+  let l:st2 = arcade#sort#new(74)
+  let l:st2.colors = 2
+  let l:st2.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  let l:st2.moves = 40
+  call arcade#sort#move(l:st2, 2, 1)
+  call s:ok(!l:st2.beat_best, 'a worse clear is not a best')
+  call s:eq(arcade#score#level_best('sort', 1), 13, 'and does not overwrite it')
+
+  " Better: the record moves.
+  let l:st3 = arcade#sort#new(75)
+  let l:st3.colors = 2
+  let l:st3.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  let l:st3.moves = 4
+  call arcade#sort#move(l:st3, 2, 1)
+  call s:ok(l:st3.beat_best, 'a better clear beats it')
+  call s:eq(arcade#score#level_best('sort', 1), 5, 'and takes the record')
+  call arcade#score#reset('sort')
+endfunction
+
+function! s:test_sort_hint() abort
+  let l:st = arcade#sort#new(76)
+  let l:st.colors = 2
+  let l:st.tubes = [[1, 1, 1], [2, 2, 2, 2], [1], []]
+  let l:moves = l:st.moves
+
+  " The move it points at is the one that finishes the board.
+  let l:mv = arcade#sort#hint_move(l:st)
+  call s:eq(len(l:mv), 2, 'the hint names a move')
+  let l:trial = deepcopy(l:st)
+  call arcade#sort#move_n(l:trial, l:mv[0], l:mv[1], 4)
+  call s:ok(arcade#sort#solved(l:trial), 'and it is the move that wins')
+
+  call s:ok(arcade#sort#hint(l:st), 'the hint lands')
+  call s:eq(l:st.moves, l:moves + 1, 'a hint costs a move')
+  call s:eq(l:st.hint, l:mv, 'and marks the tubes')
+  call s:ok(l:st.message =~# 'cost a move', 'and says so')
+  call s:eq(l:st.cursor, l:mv[0], 'and puts the hand on the source tube')
+
+  " Making a move clears the mark.
+  call arcade#sort#move(l:st, l:mv[0], l:mv[1])
+  call s:eq(l:st.hint, [], 'the mark clears on the next move')
+
+  " A finished level has nothing to ask about.
+  let l:done = arcade#sort#new(79)
+  let l:done.level_done = 1
+  call s:ok(!arcade#sort#hint(l:done), 'a cleared level gives no hints')
+  call s:ok(!arcade#sort#spare(l:done), 'nor spare tubes')
+
+  " Nor does a board with no legal move at all.
+  let l:dead = arcade#sort#new(80)
+  let l:dead.tubes = [[1, 2, 1, 2], [2, 1, 2, 1], [1, 2, 1, 2], [2, 1, 2, 1]]
+  call s:eq(arcade#sort#hint_move(l:dead), [], 'a dead board has no hint')
+  let l:dead_moves = l:dead.moves
+  call s:ok(!arcade#sort#hint(l:dead), 'and asking fails')
+  call s:eq(l:dead.moves, l:dead_moves, 'a hint that cannot be given is free')
+endfunction
+
+function! s:test_sort_spare_tube() abort
+  let l:st = arcade#sort#new(77)
+  let l:st.tubes = [[1, 2, 1, 3], [2, 1, 2, 4], [3, 4, 3, 2], [4, 4, 3, 1]]
+  let l:st.colors = 4
+  call s:ok(arcade#sort#is_stuck(l:st), 'a dead end')
+  let l:tubes = len(l:st.tubes)
+  let l:moves = l:st.moves
+
+  call s:ok(arcade#sort#spare(l:st), 't adds a tube')
+  call s:eq(len(l:st.tubes), l:tubes + 1, 'the board grew')
+  call s:eq(l:st.tubes[-1], [], 'and the new tube is empty')
+  call s:eq(l:st.moves, l:moves + 1, 'a spare tube costs a move')
+  call s:eq(l:st.cursor, l:tubes, 'and the hand moves to it')
+  call s:ok(!l:st.stuck, 'the dead end is a dead end no more')
+
+  " Undo takes it back, move count and all.
+  call s:ok(arcade#sort#undo(l:st), 'undo the tube')
+  call s:eq(len(l:st.tubes), l:tubes, 'the board shrank back')
+  call s:eq(l:st.moves, l:moves, 'and the move came back')
+  call s:ok(l:st.cursor < len(l:st.tubes), 'the hand is back on the board')
+
+  " There is a limit, or every board is winnable for free.
+  let l:added = 0
+  while arcade#sort#spare(l:st)
+    let l:added += 1
+  endwhile
+  call s:ok(l:added <= 2, 'spare tubes run out')
+  call s:ok(l:st.message =~# 'No spare tubes', 'and it says so')
+
+  " A dealt level starts fresh.
+  call arcade#sort#build_level(l:st)
+  call s:eq(l:st.spares, 0, 'a new level restocks the spares')
+  call s:eq(len(l:st.tubes), l:st.colors + 2, 'and is back to its own width')
+endfunction
+
+" A board with a spare tube on it has to survive being put down.
+function! s:test_sort_resume_with_spare() abort
+  call arcade#save#clear('sort')
+  let l:st = arcade#sort#new(78)
+  call s:ok(arcade#sort#spare(l:st), 'add a tube')
+  let l:snap = arcade#sort#suspend(l:st)
+  let l:back = arcade#sort#resume(l:snap)
+  call s:ok(!empty(l:back), 'a widened board resumes')
+  call s:eq(len(l:back.tubes), len(l:st.tubes), 'at its widened width')
+  call s:eq(l:back.spares, 1, 'with the spare accounted for')
+
+  let l:bad = deepcopy(l:snap)
+  let l:bad.spares = 0
+  call s:eq(arcade#sort#resume(l:bad), {}, 'a width that does not add up is refused')
+  let l:bad2 = deepcopy(l:snap)
+  let l:bad2.spares = 99
+  call s:eq(arcade#sort#resume(l:bad2), {}, 'and so is an impossible spare count')
+endfunction
+
 " ------------------------------------------------------------ suspending
 
 function! s:test_sort_suspend_round_trip() abort
@@ -656,7 +806,7 @@ function! s:test_sort_suspend_round_trip() abort
   let l:st.cursor = 4
   call arcade#sort#drop(l:st)
   let l:st.level = 3
-  let l:st.score = 640
+  let l:st.cleared = 6
 
   " A ball in hand goes back in its tube on the way out.
   let l:st.cursor = 2
@@ -669,7 +819,7 @@ function! s:test_sort_suspend_round_trip() abort
   let l:back = arcade#sort#resume(arcade#save#get('sort'))
   call s:ok(!empty(l:back), 'and read back')
   call s:eq(l:back.level, 3, 'level survives')
-  call s:eq(l:back.score, 640, 'score survives')
+  call s:eq(l:back.cleared, 6, 'levels cleared survives')
   call s:eq(l:back.moves, l:st.moves, 'move count survives')
   call s:eq(l:back.colors, l:st.colors, 'colour count survives')
   call s:eq(l:back.tubes, l:snap.tubes, 'the board comes back exactly')
@@ -714,7 +864,7 @@ function! s:test_sort_resume_through_the_surface() abort
   " Play a couple of moves, then close the window without pressing q.
   let l:bufnr = arcade#sort#start()
   let b:arcade.state.level = 4
-  let b:arcade.state.score = 1234
+  let b:arcade.state.cleared = 7
   let l:tubes = deepcopy(b:arcade.state.tubes)
   silent! bwipeout!
   call s:ok(!empty(arcade#save#get('sort')), 'closing the buffer saves the run')
@@ -722,12 +872,12 @@ function! s:test_sort_resume_through_the_surface() abort
   " And it comes back.
   call arcade#sort#start()
   call s:eq(b:arcade.state.level, 4, 'the level came back')
-  call s:eq(b:arcade.state.score, 1234, 'the score came back')
+  call s:eq(b:arcade.state.cleared, 7, 'the tally came back')
   call s:eq(b:arcade.state.tubes, l:tubes, 'the board came back')
 
   " R abandons it and deals a fresh run.
   call arcade#ui#key('R')
-  call s:eq(b:arcade.state.score, 0, 'a new run starts from nothing')
+  call s:eq(b:arcade.state.cleared, 0, 'a new run starts from nothing')
   call s:eq(b:arcade.state.level, 1, 'and from level one')
   call s:eq(arcade#save#get('sort'), {}, 'and the old saved run is gone')
 
@@ -836,6 +986,8 @@ let s:tests = [
       \ 's:test_sort_move_n', 's:test_sort_clear_every_path', 's:test_sort_clear_by_hand',
       \ 's:test_sort_stuck_by_hand', 's:test_sort_solvable_by_hand',
       \ 's:test_sort_solvable', 's:test_sort_playout',
+      \ 's:test_sort_zen', 's:test_sort_level_best', 's:test_sort_hint',
+      \ 's:test_sort_spare_tube', 's:test_sort_resume_with_spare',
       \ 's:test_sort_suspend_round_trip', 's:test_sort_resume_rejects_junk',
       \ 's:test_sort_resume_through_the_surface', 's:test_sort_escape_stays_put',
       \ 's:test_score_run_dedupe', 's:test_surface']

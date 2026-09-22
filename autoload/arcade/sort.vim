@@ -52,17 +52,19 @@ function! arcade#sort#new(...) abort
         \ 'held_from': -1,
         \ 'moves': 0,
         \ 'total_moves': 0,
-        \ 'score': 0,
-        \ 'par': 0,
-        \ 'gained': 0,
         \ 'cleared': 0,
+        \ 'zen': get(g:, 'arcade_sort_zen', 0) ? 1 : 0,
+        \ 'spares': 0,
+        \ 'assists': 0,
+        \ 'level_best': 0,
+        \ 'beat_best': 0,
+        \ 'hint': [],
         \ 'level_done': 0,
         \ 'stuck': 0,
         \ 'recorded': 0,
         \ 'message': '',
         \ 'history': [],
         \ 'solution': [],
-        \ 'best': arcade#score#best('sort'),
         \ 'run': strftime('%Y%m%d%H%M%S'),
         \ 'rng': arcade#util#rng_new(l:seed),
         \ }
@@ -72,13 +74,16 @@ endfunction
 
 function! arcade#sort#build_level(st) abort
   let a:st.colors = s:colors_for(a:st.level)
-  let a:st.par = a:st.colors * s:CAP
   let a:st.cursor = 0
+  let a:st.spares = 0
+  let a:st.assists = 0
+  let a:st.hint = []
+  let a:st.beat_best = 0
+  let a:st.level_best = a:st.zen ? 0 : arcade#score#level_best('sort', a:st.level)
   let a:st.held = -1
   let a:st.held_n = 0
   let a:st.held_from = -1
   let a:st.moves = 0
-  let a:st.gained = 0
   let a:st.level_done = 0
   let a:st.stuck = 0
   let a:st.history = []
@@ -210,7 +215,8 @@ function! arcade#sort#move_n(st, src, dst, n) abort
   if l:n <= 0
     return 0
   endif
-  call add(a:st.history, {'tubes': deepcopy(a:st.tubes), 'moves': a:st.moves})
+  call add(a:st.history, {'tubes': deepcopy(a:st.tubes), 'moves': a:st.moves,
+        \ 'spares': a:st.spares})
   if len(a:st.history) > s:UNDO_DEPTH
     call remove(a:st.history, 0)
   endif
@@ -220,6 +226,7 @@ function! arcade#sort#move_n(st, src, dst, n) abort
   let a:st.moves += l:n
   let a:st.total_moves += l:n
   let a:st.message = ''
+  let a:st.hint = []
   call arcade#sort#refresh(a:st)
   return l:n
 endfunction
@@ -243,21 +250,18 @@ function! arcade#sort#refresh(st) abort
     let a:st.level_done = 1
     let a:st.stuck = 0
     let a:st.cleared += 1
-    let a:st.gained = arcade#sort#award(a:st)
-    let a:st.score += a:st.gained
+    if !a:st.zen
+      " Beating a record and setting the first one are different things
+      " to say, so the previous mark has to be read before it is moved.
+      let l:prev = arcade#score#level_best('sort', a:st.level)
+      call arcade#score#record_level('sort', a:st.level, a:st.moves)
+      let a:st.beat_best = l:prev > 0 && a:st.moves < l:prev
+      let a:st.level_best = arcade#score#level_best('sort', a:st.level)
+    endif
     return 1
   endif
   let a:st.stuck = arcade#sort#is_stuck(a:st)
   return 0
-endfunction
-
-" Points for the level just cleared: a flat purse per colour, eaten into by
-" every move past par. Never worth less than a quarter of the purse, so a
-" messy solve still beats giving up.
-function! arcade#sort#award(st) abort
-  let l:base = 100 * a:st.colors
-  let l:over = max([0, a:st.moves - a:st.par])
-  return max([l:base / 4, l:base - 5 * l:over])
 endfunction
 
 function! arcade#sort#solved(st) abort
@@ -401,6 +405,8 @@ function! arcade#sort#undo(st) abort
   let l:prev = remove(a:st.history, -1)
   let a:st.tubes = l:prev.tubes
   let a:st.moves = l:prev.moves
+  let a:st.spares = get(l:prev, 'spares', a:st.spares)
+  let a:st.cursor = arcade#util#clamp(a:st.cursor, 0, len(a:st.tubes) - 1)
   let a:st.stuck = 0
   let a:st.message = 'Undid one move.'
   call arcade#sort#refresh(a:st)
@@ -416,8 +422,11 @@ function! arcade#sort#next_level(st) abort
   return 1
 endfunction
 
+" A run's tally is how far it got. The move count is the thing worth
+" being proud of, but it is per level and lower is better, so it lives in
+" arcade#score#record_level rather than here.
 function! arcade#sort#score(st) abort
-  return a:st.score
+  return a:st.cleared
 endfunction
 
 " ------------------------------------------------------------- rendering
@@ -436,9 +445,14 @@ function! arcade#sort#draw(st) abort
   let l:head = l:margin . 'sort'
   call add(l:hl, [0, strlen(l:margin), strlen(l:head), 'ArcadeSortTitle'])
   call add(l:lines, l:head)
-  let l:stats = printf('level %d   colours %d   moves %d   score %d   best %d',
-        \ a:st.level, a:st.colors, a:st.moves, a:st.score,
-        \ max([a:st.best, a:st.score]))
+  let l:stats = printf('level %d   colours %d   moves %d', a:st.level,
+        \ a:st.colors, a:st.moves)
+  if a:st.zen
+    let l:stats .= '   zen'
+  else
+    let l:stats .= a:st.level_best > 0 ? printf('   best %d', a:st.level_best) : ''
+    let l:stats .= printf('   cleared %d', a:st.cleared)
+  endif
   call add(l:hl, [1, strlen(l:margin), strlen(l:margin . l:stats), 'ArcadeSortScore'])
   call add(l:lines, l:margin . l:stats)
   call add(l:lines, '')
@@ -471,7 +485,10 @@ function! arcade#sort#draw(st) abort
     let l:lnum = len(l:lines)
     let l:line = l:margin
     for l:i in range(l:n)
-      let l:wall = l:i == a:st.cursor ? 'ArcadeSortCursor' : 'ArcadeSortTube'
+      let l:wall = l:i == a:st.cursor
+            \ ? 'ArcadeSortCursor'
+            \ : (index(get(a:st, 'hint', []), l:i) >= 0
+            \    ? 'ArcadeSortAssist' : 'ArcadeSortTube')
       let l:pos = strlen(l:line)
       let l:line .= l:g.wall
       call add(l:hl, [l:lnum, l:pos, strlen(l:line), l:wall])
@@ -519,12 +536,20 @@ function! arcade#sort#draw(st) abort
   call add(l:lines, '')
 
   if a:st.level_done
-    let l:banner = printf('LEVEL CLEAR  +%d in %d move%s  --  space for the next one',
-          \ a:st.gained, a:st.moves, a:st.moves == 1 ? '' : 's')
+    let l:banner = printf('LEVEL CLEAR in %d move%s', a:st.moves,
+          \ a:st.moves == 1 ? '' : 's')
+    if !a:st.zen && a:st.beat_best
+      let l:banner .= '  --  a new best'
+    elseif !a:st.zen && a:st.level_best > 0 && a:st.level_best < a:st.moves
+      let l:banner .= printf('  --  best %d', a:st.level_best)
+    endif
+    let l:banner .= '  --  space for the next one'
     call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:banner), 'ArcadeSortWin'])
     call add(l:lines, l:margin . l:banner)
   elseif a:st.stuck
-    let l:banner = 'STUCK  --  u undoes, r reshuffles this level'
+    let l:banner = a:st.spares < s:MAX_SPARES
+          \ ? 'STUCK  --  u undoes, t adds a spare tube, r reshuffles'
+          \ : 'STUCK  --  u undoes, r reshuffles this level'
     call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:banner), 'ArcadeSortStuck'])
     call add(l:lines, l:margin . l:banner)
   elseif !empty(a:st.message)
@@ -534,12 +559,110 @@ function! arcade#sort#draw(st) abort
     call add(l:lines, '')
   endif
   for l:hint in ['hl move   space lifts a run, space drops it   2space lifts two',
-        \ 'u undo   r reshuffle   R new run   q saves and quits']
+        \ 'u undo   ? hint   t tube   z zen   r reshuffle   R new run   q quit']
     call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:hint), 'ArcadeSortHint'])
     call add(l:lines, l:margin . l:hint)
   endfor
 
   return {'lines': l:lines, 'hl': l:hl}
+endfunction
+
+" ---------------------------------------------------------------- help
+" Both of these are help, and help is not free: each costs a move, the
+" same as if you had shifted a ball and thought better of it. In zen
+" there is nothing to spend it against, which is rather the point.
+
+let s:MAX_SPARES = 2
+
+" Picks a move worth making. There is a solution on file for the deal,
+" but it goes stale the moment the board leaves the dealt position, so
+" this ranks the legal moves instead: finish a tube, empty a tube, add
+" to a colour, then anything at all.
+function! arcade#sort#hint_move(st) abort
+  let l:best = []
+  let l:rank = -1
+  let l:n = len(a:st.tubes)
+  for l:src in range(l:n)
+    for l:dst in range(l:n)
+      if !arcade#sort#can_move(a:st, l:src, l:dst)
+        continue
+      endif
+      let l:run = arcade#sort#run_length(a:st.tubes[l:src])
+      let l:take = min([l:run, s:CAP - len(a:st.tubes[l:dst])])
+      let l:fills = len(a:st.tubes[l:dst]) + l:take == s:CAP
+      let l:empties = l:run == len(a:st.tubes[l:src]) && l:take == l:run
+      if l:fills && l:empties
+        let l:score = 4
+      elseif l:fills
+        let l:score = 3
+      elseif l:empties
+        let l:score = 2
+      elseif !empty(a:st.tubes[l:dst])
+        let l:score = 1
+      else
+        let l:score = 0
+      endif
+      if l:score > l:rank
+        let l:rank = l:score
+        let l:best = [l:src, l:dst]
+      endif
+    endfor
+  endfor
+  return l:best
+endfunction
+
+function! arcade#sort#hint(st) abort
+  if a:st.level_done
+    return 0
+  endif
+  let l:mv = arcade#sort#hint_move(a:st)
+  if empty(l:mv)
+    let a:st.message = 'No legal move to point at.'
+    return 0
+  endif
+  let a:st.hint = l:mv
+  let a:st.moves += 1
+  let a:st.total_moves += 1
+  let a:st.assists += 1
+  let a:st.cursor = l:mv[0]
+  let a:st.message = printf('Hint: tube %d onto tube %d. That cost a move.',
+        \ l:mv[0] + 1, l:mv[1] + 1)
+  return 1
+endfunction
+
+" Adds an empty tube to work in. Costs a move, and there are only so
+" many -- an unlimited supply of spare tubes solves every board.
+function! arcade#sort#spare(st) abort
+  if a:st.level_done
+    return 0
+  endif
+  if a:st.spares >= s:MAX_SPARES
+    let a:st.message = printf('No spare tubes left (%d a level).', s:MAX_SPARES)
+    return 0
+  endif
+  call add(a:st.history, {'tubes': deepcopy(a:st.tubes), 'moves': a:st.moves,
+        \ 'spares': a:st.spares})
+  if len(a:st.history) > s:UNDO_DEPTH
+    call remove(a:st.history, 0)
+  endif
+  call add(a:st.tubes, [])
+  let a:st.spares += 1
+  let a:st.assists += 1
+  let a:st.moves += 1
+  let a:st.total_moves += 1
+  let a:st.cursor = len(a:st.tubes) - 1
+  let a:st.message = 'A spare tube. That cost a move.'
+  call arcade#sort#refresh(a:st)
+  return 1
+endfunction
+
+function! arcade#sort#zen(st) abort
+  let a:st.zen = a:st.zen ? 0 : 1
+  let a:st.level_best = a:st.zen ? 0 : arcade#score#level_best('sort', a:st.level)
+  let a:st.message = a:st.zen
+        \ ? 'Zen: no scores, no records, just tubes.'
+        \ : 'Scoring on: moves count again.'
+  return 1
 endfunction
 
 " ------------------------------------------------------------ suspending
@@ -557,7 +680,7 @@ function! arcade#sort#suspend(st) abort
     let l:snap.held_from = -1
   endif
   let l:snap.message = ''
-  let l:snap.best = 0
+  let l:snap.hint = []
   return l:snap
 endfunction
 
@@ -568,13 +691,18 @@ function! arcade#sort#resume(data) abort
   if type(a:data) != v:t_dict
     return {}
   endif
-  for l:key in ['level', 'colors', 'tubes', 'score', 'moves']
+  for l:key in ['level', 'colors', 'tubes', 'cleared', 'moves']
     if !has_key(a:data, l:key)
       return {}
     endif
   endfor
   let l:st = extend(arcade#sort#new(), deepcopy(a:data))
-  if type(l:st.tubes) != v:t_list || len(l:st.tubes) != l:st.colors + s:FREE
+  let l:spares = get(l:st, 'spares', 0)
+  if type(l:spares) != v:t_number || l:spares < 0 || l:spares > s:MAX_SPARES
+    return {}
+  endif
+  if type(l:st.tubes) != v:t_list
+        \ || len(l:st.tubes) != l:st.colors + s:FREE + l:spares
     return {}
   endif
   let l:counts = {}
@@ -598,9 +726,10 @@ function! arcade#sort#resume(data) abort
   let l:st.held_n = 0
   let l:st.held_from = -1
   let l:st.cursor = arcade#util#clamp(get(l:st, 'cursor', 0), 0, len(l:st.tubes) - 1)
-  let l:st.best = arcade#score#best('sort')
   let l:st.recorded = 0
   let l:st.message = ''
+  let l:st.hint = []
+  let l:st.level_best = l:st.zen ? 0 : arcade#score#level_best('sort', l:st.level)
   call arcade#sort#refresh(l:st)
   return l:st
 endfunction
@@ -624,20 +753,32 @@ function! s:on_undo(ctl, key) abort
   call arcade#sort#undo(a:ctl.state)
 endfunction
 
+function! s:on_hint(ctl, key) abort
+  call arcade#sort#hint(a:ctl.state)
+endfunction
+
+function! s:on_spare(ctl, key) abort
+  call arcade#sort#spare(a:ctl.state)
+endfunction
+
+function! s:on_zen(ctl, key) abort
+  call arcade#sort#zen(a:ctl.state)
+endfunction
+
 " Reshuffles the current level; the run's score so far is kept.
 function! s:on_restart(ctl, key) abort
   call arcade#sort#build_level(a:ctl.state)
 endfunction
 
+" Zen runs leave no trace at all -- that is what it is for.
 function! s:maybe_record(st) abort
-  if a:st.recorded || a:st.score <= 0
+  if a:st.recorded || a:st.zen || a:st.cleared <= 0
     return
   endif
   let a:st.recorded = 1
-  call arcade#score#record('sort', a:st.score,
-        \ {'level': a:st.level, 'cleared': a:st.cleared,
-        \  'moves': a:st.total_moves, 'run': get(a:st, 'run', '')})
-  let a:st.best = arcade#score#best('sort')
+  call arcade#score#record('sort', a:st.cleared,
+        \ {'level': a:st.level, 'moves': a:st.total_moves,
+        \  'assists': a:st.assists, 'run': get(a:st, 'run', '')})
 endfunction
 
 " Abandons the run and deals a fresh one. The run being walked away from
@@ -694,6 +835,9 @@ function! arcade#sort#start(...) abort
     let l:ctl.keys[l:key] = function('s:on_space')
   endfor
   let l:ctl.keys['u'] = function('s:on_undo')
+  let l:ctl.keys['?'] = function('s:on_hint')
+  let l:ctl.keys['t'] = function('s:on_spare')
+  let l:ctl.keys['z'] = function('s:on_zen')
   let l:ctl.keys['r'] = function('s:on_restart')
   let l:ctl.keys['R'] = function('s:on_new_run')
   let l:ctl.keys['q'] = function('s:on_quit')

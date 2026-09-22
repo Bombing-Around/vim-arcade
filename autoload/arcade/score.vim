@@ -60,6 +60,34 @@ function! arcade#score#record(game, score, ...) abort
   return l:is_best
 endfunction
 
+" Per-level bests, for a game scored by how few moves a level took rather
+" than by points. Lower is better here, which is the opposite of #best, so
+" it lives in its own corner of the same entry.
+function! arcade#score#level_best(game, level) abort
+  let l:levels = get(get(s:load(), a:game, {}), 'levels', {})
+  return get(l:levels, string(a:level), 0)
+endfunction
+
+" Records moves for a cleared level; returns 1 if it beat the old best.
+function! arcade#score#record_level(game, level, moves) abort
+  if a:moves <= 0
+    return 0
+  endif
+  let l:data = s:load()
+  let l:entry = get(l:data, a:game, {})
+  let l:levels = get(l:entry, 'levels', {})
+  let l:old = get(l:levels, string(a:level), 0)
+  if l:old > 0 && l:old <= a:moves
+    return 0
+  endif
+  let l:levels[string(a:level)] = a:moves
+  let l:entry.levels = l:levels
+  let l:data[a:game] = l:entry
+  let s:cache = l:data
+  call s:save()
+  return 1
+endfunction
+
 function! arcade#score#reset(...) abort
   call s:load()
   if a:0

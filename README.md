@@ -72,8 +72,15 @@ deals a fresh run.
 
 Levels run from four colours to nine, two spare tubes throughout. Each one is
 dealt by walking backwards from a solved board along inverted moves, so every
-level is winnable — though a careless line still strands the board, which is
-what `u` is for.
+level is winnable — though a careless line still strands the board.
+
+Stuck, or just want a nudge? `?` points at a move worth making and `t` hands
+you a spare tube (two a level). Neither is free: each costs a move, the same as
+shifting a ball and thinking better of it.
+
+There are no points. A level is scored by how few moves it took, and each level
+keeps its own record — beat it and the board says so. `z` is zen: no records,
+no tally, just tubes. A zen run leaves nothing behind at all.
 
 ## Options
 

@@ -73,6 +73,7 @@ function! s:define_highlights() abort
   call s:hl('ArcadeSortMsg',    'ctermfg=246 guifg=#949494')
   call s:hl('ArcadeSortWin',    'cterm=bold gui=bold ctermfg=220 guifg=#ffd700')
   call s:hl('ArcadeSortStuck',  'cterm=bold gui=bold ctermfg=203 guifg=#ff5f5f')
+  call s:hl('ArcadeSortAssist', 'cterm=bold gui=bold ctermfg=220 guifg=#ffd700')
   call s:hl('ArcadeSortC1',     'cterm=bold gui=bold ctermfg=203 guifg=#ff5f5f')
   call s:hl('ArcadeSortC2',     'cterm=bold gui=bold ctermfg=114 guifg=#87d787')
   call s:hl('ArcadeSortC3',     'cterm=bold gui=bold ctermfg=221 guifg=#ffd75f')

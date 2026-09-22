@@ -3,7 +3,8 @@
 let s:GAMES = {
       \ '2048':  {'start': 'arcade#twenty48#start', 'label': '2048'},
       \ 'crawl': {'start': 'arcade#crawl#start',    'label': 'dungeon crawl'},
-      \ 'sort':  {'start': 'arcade#sort#start',     'label': 'ball sort'},
+      \ 'sort':  {'start': 'arcade#sort#start',     'label': 'ball sort',
+      \           'unit': 'levels'},
       \ }
 
 function! arcade#complete(lead, ...) abort
@@ -26,7 +27,8 @@ function! arcade#scoreboard() abort
   for l:key in sort(keys(s:GAMES))
     let l:best = arcade#score#best(l:key)
     echohl Title
-    echo printf('%-8s best %d', s:GAMES[l:key].label, l:best)
+    echo printf('%-8s best %d %s', s:GAMES[l:key].label, l:best,
+          \ get(s:GAMES[l:key], 'unit', ''))
     echohl None
     for l:run in arcade#score#history(l:key)[0:4]
       let l:extra = filter(copy(l:run), 'index(["score", "at"], v:key) < 0')
