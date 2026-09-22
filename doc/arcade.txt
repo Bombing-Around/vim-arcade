@@ -92,15 +92,26 @@ carrying out the Amulet of Yendor, which lies on the deepest level
 Tubes of coloured balls, one hand. Stack every colour into a tube of its own.
 
     h l  <Left> <Right>                   move the hand between tubes
-    <Space>  <CR>                         lift the top ball, or drop it
-    u                                     undo (32 moves; returns a held ball)
+    <Space>  <CR>                         lift the top run, or drop it
+    u                                     undo (32 steps; returns a handful)
     r                                     reshuffle this level
     q  <Esc>                              quit
 
-A ball drops onto an empty tube, or onto a tube whose top ball is the same
-colour and which still has room; dropping it back where it came from is
+Balls drop onto an empty tube, or onto a tube whose top ball is the same
+colour and which still has room; dropping them back where they came from is
 always allowed and costs no move. Each colour is also a distinct shape, so
 the board reads on a monochrome build.
+
+A |count| applies as it does anywhere else: >
+    2<Space>    lift two balls of a run of three
+    1<Space>    drop one of the handful you are carrying
+    3l          walk three tubes to the right
+<
+Dropping into a tube with less room than you are carrying puts in what fits
+and leaves the rest in hand, which is the same manoeuvre without counting.
+A handful is always one colour, one undo step covers a whole drop, and the
+move counter counts balls, so par and score mean the same thing whether a
+run moves in one keystroke or three.
 
 Levels run from four colours up to nine, always with two spare tubes.
 Clearing one pays 100 per colour, less 5 for every move past par (colours x

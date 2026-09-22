@@ -6,6 +6,10 @@
 "    'draw': funcref(state) -> {'lines': [...], 'hl': [[lnum, bcol, bend, group], ...]}}
 " Key handlers get the controller dict and the pressed key, and may mutate
 " controller.state. The surface redraws after every handled key.
+"
+" A count typed before the key ("3l") is left in controller.count, 0 when
+" none was typed; it rides the dict rather than the handler signature so a
+" game that does not care about counts needs no changes.
 
 let s:ns = -1
 let s:prop_types = {}
@@ -74,11 +78,15 @@ endfunction
 " the name it was mapped under, and the lookup in ctl.keys would silently
 " miss. Passing a plain integer index instead sidesteps the translation
 " entirely: digits mean the same thing on both sides of execute().
+"
+" The :<C-u> is what makes counts work at all: Vim turns a count typed
+" before a : mapping into a line range, which :call rejects outright
+" (E481). Clearing it leaves the count readable in v:count.
 function! s:bind_keys(ctl) abort
-  nnoremap <buffer><silent><nowait> <Esc> :call arcade#ui#close()<CR>
+  nnoremap <buffer><silent><nowait> <Esc> :<C-u>call arcade#ui#close()<CR>
   let b:arcade_key_names = keys(a:ctl.keys)
   for l:idx in range(len(b:arcade_key_names))
-    execute printf('nnoremap <buffer><silent><nowait> %s :call arcade#ui#dispatch(%d)<CR>',
+    execute printf('nnoremap <buffer><silent><nowait> %s :<C-u>call arcade#ui#dispatch(%d, v:count)<CR>',
           \ b:arcade_key_names[l:idx], l:idx)
   endfor
   " Swallow keys that would otherwise move the cursor or edit the board.
@@ -110,16 +118,16 @@ endfunction
 
 " Entry point actually wired to keypresses; see the comment on s:bind_keys
 " for why the mapping passes an index here rather than the key name.
-function! arcade#ui#dispatch(idx) abort
+function! arcade#ui#dispatch(idx, ...) abort
   if !exists('b:arcade_key_names') || a:idx >= len(b:arcade_key_names)
     return
   endif
-  call arcade#ui#key(b:arcade_key_names[a:idx])
+  call arcade#ui#key(b:arcade_key_names[a:idx], a:0 ? a:1 : 0)
 endfunction
 
 " Entry point for direct calls (tests, other mappings) that already have
 " the real key name in hand.
-function! arcade#ui#key(key) abort
+function! arcade#ui#key(key, ...) abort
   if !exists('b:arcade')
     return
   endif
@@ -128,6 +136,7 @@ function! arcade#ui#key(key) abort
   if type(l:Handler) != v:t_func
     return
   endif
+  let l:ctl.count = a:0 ? a:1 : 0
   call call(l:Handler, [l:ctl, a:key])
   if bufexists(get(l:ctl, 'bufnr', -1))
     call arcade#ui#redraw(l:ctl)

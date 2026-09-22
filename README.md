@@ -40,17 +40,26 @@ win.
 ## Sort
 
 Tubes of coloured balls; stack every colour into a tube of its own. `h`/`l` or
-the arrows walk the hand between tubes, `<Space>` lifts the top ball and
-`<Space>` drops it again, `u` undoes, `r` reshuffles, `q` quits. A ball only
-drops onto an empty tube or onto its own colour, and each colour is a distinct
-shape as well, so the board still reads without colour.
+the arrows walk the hand between tubes, `<Space>` lifts the whole run of
+matching balls off a tube and `<Space>` drops it again, `u` undoes, `r`
+reshuffles, `q` quits. Balls only drop onto an empty tube or onto their own
+colour, and each colour is a distinct shape as well, so the board still reads
+without colour.
+
+Counts work the way they do everywhere else in vim: `2<Space>` lifts two of a
+run of three, `2l` walks two tubes over, and `1<Space>` over the target drops
+one of what you are holding. Dropping into a tube with less room than you are
+carrying puts in what fits and keeps the rest in hand — the same manoeuvre
+without the arithmetic. One `u` puts back a whole handful.
 
 ```
-            ◆
+            ●
+            ●            <- three in hand, hovering
+            ●
 │ │ │◆│ │ │ │ │ │ │ │◆│
 │ │ │▲│ │■│ │ │ │ │ │▲│
-│ │ │▲│ │■│ │●│ │●│ │■│
-│ │ │▲│ │■│ │●│ │●│ │◆│
+│ │ │▲│ │■│ │ │ │●│ │■│
+│ │ │▲│ │■│ │ │ │●│ │◆│
 ╰─╯ ╰─╯ ╰─╯ ╰─╯ ╰─╯ ╰─╯
             ▲
 ```

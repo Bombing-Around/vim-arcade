@@ -2,9 +2,14 @@
 " Logic is pure (state in, state out) so it can be tested headlessly;
 " only #start and the key handlers touch a buffer.
 "
-" One hand, one ball: <Space> lifts the top ball of the tube under the
-" cursor, <Space> again drops it wherever it fits. A ball fits an empty
+" <Space> lifts the run of same-coloured balls off the top of the tube
+" under the cursor, <Space> again drops it wherever it fits: an empty
 " tube, or one whose top ball is the same colour and which has room.
+"
+" A count takes a partial handful -- 2<Space> lifts two of a run of
+" three, and 2<Space> over the target drops two of what is in hand. A
+" drop into a tube with less room than that takes what fits and leaves
+" the rest in hand, which is the same manoeuvre without the arithmetic.
 "
 " Because a legal move only ever stacks a colour on itself, a mixed tube
 " can never be *built* by playing forwards -- forward play from a solved
@@ -43,6 +48,7 @@ function! arcade#sort#new(...) abort
         \ 'tubes': [],
         \ 'cursor': 0,
         \ 'held': -1,
+        \ 'held_n': 0,
         \ 'held_from': -1,
         \ 'moves': 0,
         \ 'total_moves': 0,
@@ -68,6 +74,7 @@ function! arcade#sort#build_level(st) abort
   let a:st.par = a:st.colors * s:CAP
   let a:st.cursor = 0
   let a:st.held = -1
+  let a:st.held_n = 0
   let a:st.held_from = -1
   let a:st.moves = 0
   let a:st.gained = 0
@@ -170,25 +177,54 @@ function! arcade#sort#can_move(st, src, dst) abort
   return empty(l:dst) || l:dst[-1] == a:st.tubes[a:src][-1]
 endfunction
 
+" How many same-coloured balls sit on top of a tube -- one handful.
+function! arcade#sort#run_length(tube) abort
+  if empty(a:tube)
+    return 0
+  endif
+  let l:n = 1
+  let l:i = len(a:tube) - 2
+  while l:i >= 0 && a:tube[l:i] == a:tube[-1]
+    let l:n += 1
+    let l:i -= 1
+  endwhile
+  return l:n
+endfunction
+
 function! s:apply(st, src, dst) abort
   call add(a:st.tubes[a:dst], remove(a:st.tubes[a:src], -1))
 endfunction
 
-" Moves one ball src -> dst. Returns 1 if the board changed.
-function! arcade#sort#move(st, src, dst) abort
-  if a:st.level_done || !arcade#sort#can_move(a:st, a:src, a:dst)
+" Moves up to n balls src -> dst, capped by the run on top of src and the
+" room in dst. One undo step covers the whole handful. Returns how many
+" balls actually moved. Moves are counted per ball, so par and the score
+" mean the same thing whether you shift a run in one keystroke or three.
+function! arcade#sort#move_n(st, src, dst, n) abort
+  if a:st.level_done || a:n <= 0 || !arcade#sort#can_move(a:st, a:src, a:dst)
+    return 0
+  endif
+  let l:n = min([a:n, arcade#sort#run_length(a:st.tubes[a:src]),
+        \ s:CAP - len(a:st.tubes[a:dst])])
+  if l:n <= 0
     return 0
   endif
   call add(a:st.history, {'tubes': deepcopy(a:st.tubes), 'moves': a:st.moves})
   if len(a:st.history) > s:UNDO_DEPTH
     call remove(a:st.history, 0)
   endif
-  call s:apply(a:st, a:src, a:dst)
-  let a:st.moves += 1
-  let a:st.total_moves += 1
+  for l:i in range(l:n)
+    call s:apply(a:st, a:src, a:dst)
+  endfor
+  let a:st.moves += l:n
+  let a:st.total_moves += l:n
   let a:st.message = ''
   call s:after_move(a:st)
-  return 1
+  return l:n
+endfunction
+
+" Moves one ball src -> dst. Returns 1 if the board changed.
+function! arcade#sort#move(st, src, dst) abort
+  return arcade#sort#move_n(a:st, a:src, a:dst, 1) > 0
 endfunction
 
 function! s:after_move(st) abort
@@ -226,7 +262,7 @@ function! arcade#sort#solved(st) abort
       endif
     endfor
   endfor
-  return a:st.held < 0
+  return a:st.held_n == 0
 endfunction
 
 function! arcade#sort#is_stuck(st) abort
@@ -245,62 +281,97 @@ endfunction
 
 " ---------------------------------------------------------------- hand
 
-function! arcade#sort#cursor_move(st, delta) abort
+function! arcade#sort#cursor_move(st, delta, ...) abort
+  let l:step = a:delta * max([1, a:0 ? a:1 : 0])
   let l:n = len(a:st.tubes)
-  let a:st.cursor = (a:st.cursor + a:delta + l:n) % l:n
+  let a:st.cursor = (a:st.cursor % l:n + l:step % l:n + l:n) % l:n
   return 1
 endfunction
 
-function! arcade#sort#grab(st) abort
+" Lifts the run off the top of the tube under the cursor, or the top
+" {count} of it. Returns how many balls came up.
+function! arcade#sort#grab(st, ...) abort
+  let l:want = a:0 ? a:1 : 0
   if a:st.held >= 0 || a:st.level_done
     return 0
   endif
-  if empty(a:st.tubes[a:st.cursor])
+  let l:tube = a:st.tubes[a:st.cursor]
+  if empty(l:tube)
     let a:st.message = 'That tube is empty.'
     return 0
   endif
-  let a:st.held = remove(a:st.tubes[a:st.cursor], -1)
+  let l:run = arcade#sort#run_length(l:tube)
+  let l:n = l:want > 0 ? min([l:want, l:run]) : l:run
+  let a:st.held = l:tube[-1]
+  let a:st.held_n = l:n
   let a:st.held_from = a:st.cursor
+  call remove(l:tube, len(l:tube) - l:n, -1)
   let a:st.message = ''
-  return 1
+  return l:n
 endfunction
 
-" Drops the held ball on the tube under the cursor. Dropping it back where
-" it came from is always allowed and costs no move.
-function! arcade#sort#drop(st) abort
+" Drops the handful on the tube under the cursor, or {count} of it.
+" Whatever does not fit stays in hand. Dropping back where it came from
+" is always allowed and costs no move.
+function! arcade#sort#drop(st, ...) abort
+  let l:want = a:0 ? a:1 : 0
   if a:st.held < 0
     return 0
   endif
   let l:src = a:st.held_from
   let l:dst = a:st.cursor
-  call add(a:st.tubes[l:src], a:st.held)
-  let a:st.held = -1
-  let a:st.held_from = -1
+  let l:n = a:st.held_n
+  let l:ball = a:st.held
+  " Put the whole handful back first, so the drop goes through the same
+  " rules -- and lands in the same undo snapshot -- as any other move.
+  " The snapshot has to hold the balls still in hand too, or undoing a
+  " partial drop would lose them.
+  call extend(a:st.tubes[l:src], repeat([l:ball], l:n))
   if l:src == l:dst
+    call s:empty_hand(a:st)
     let a:st.message = 'Put it back.'
-    return 1
+    return l:n
   endif
-  if arcade#sort#move(a:st, l:src, l:dst)
-    return 1
+  let l:moved = arcade#sort#move_n(a:st, l:src, l:dst,
+        \ l:want > 0 ? min([l:want, l:n]) : l:n)
+  let l:left = l:n - l:moved
+  if l:left > 0
+    call remove(a:st.tubes[l:src], len(a:st.tubes[l:src]) - l:left, -1)
+    let a:st.held = l:ball
+    let a:st.held_n = l:left
+    let a:st.held_from = l:src
+  else
+    call s:empty_hand(a:st)
   endif
-  " Illegal target: keep the ball in hand rather than silently dumping it.
-  let a:st.held = remove(a:st.tubes[l:src], -1)
-  let a:st.held_from = l:src
+  if l:moved > 0
+    if l:left > 0
+      let a:st.message = printf('%d still in hand.', l:left)
+    endif
+    return l:moved
+  endif
   let a:st.message = len(a:st.tubes[l:dst]) >= s:CAP
         \ ? 'That tube is full.'
         \ : 'Only onto its own colour, or an empty tube.'
   return 0
 endfunction
 
-function! arcade#sort#toggle(st) abort
-  return a:st.held >= 0 ? arcade#sort#drop(a:st) : arcade#sort#grab(a:st)
+function! s:empty_hand(st) abort
+  let a:st.held = -1
+  let a:st.held_n = 0
+  let a:st.held_from = -1
+endfunction
+
+function! arcade#sort#toggle(st, ...) abort
+  let l:count = a:0 ? a:1 : 0
+  return a:st.held >= 0
+        \ ? arcade#sort#drop(a:st, l:count)
+        \ : arcade#sort#grab(a:st, l:count)
 endfunction
 
 function! arcade#sort#undo(st) abort
   if a:st.held >= 0
-    call add(a:st.tubes[a:st.held_from], a:st.held)
-    let a:st.held = -1
-    let a:st.held_from = -1
+    call extend(a:st.tubes[a:st.held_from], repeat([a:st.held], a:st.held_n))
+    call s:empty_hand(a:st)
     let a:st.message = 'Put it back.'
     return 1
   endif
@@ -352,21 +423,26 @@ function! arcade#sort#draw(st) abort
   call add(l:lines, l:margin . l:stats)
   call add(l:lines, '')
 
-  " The hand: the held ball floats over its column.
-  let l:lnum = len(l:lines)
-  let l:line = l:margin
-  for l:i in range(l:n)
-    let l:pos = strlen(l:line)
-    if l:i == a:st.cursor && a:st.held >= 0
-      let l:ch = l:g.balls[a:st.held - 1]
-      let l:line .= ' ' . l:ch . ' '
-      call add(l:hl, [l:lnum, l:pos + 1, l:pos + 1 + strlen(l:ch), s:color_group(a:st.held)])
-    else
-      let l:line .= '   '
-    endif
-    let l:line .= l:i < l:n - 1 ? ' ' : ''
+  " The hand: held balls hover over their column, stacked up from the
+  " mouth of the tube. The region is always s:CAP rows tall, empty or
+  " not, so picking a handful up never shifts the board under you.
+  for l:row in range(s:CAP)
+    let l:depth = s:CAP - l:row
+    let l:lnum = len(l:lines)
+    let l:line = l:margin
+    for l:i in range(l:n)
+      let l:pos = strlen(l:line)
+      if l:i == a:st.cursor && a:st.held >= 0 && a:st.held_n >= l:depth
+        let l:ch = l:g.balls[a:st.held - 1]
+        let l:line .= ' ' . l:ch . ' '
+        call add(l:hl, [l:lnum, l:pos + 1, l:pos + 1 + strlen(l:ch), s:color_group(a:st.held)])
+      else
+        let l:line .= '   '
+      endif
+      let l:line .= l:i < l:n - 1 ? ' ' : ''
+    endfor
+    call add(l:lines, l:line)
   endfor
-  call add(l:lines, l:line)
 
   " Tubes are open at the top, so there is no top border: row 0 is the
   " highest slot, row cap-1 sits on the floor of the tube.
@@ -437,9 +513,11 @@ function! arcade#sort#draw(st) abort
   else
     call add(l:lines, '')
   endif
-  let l:hint = 'hl / arrows move   space grab drop   u undo   r reshuffle   q quit'
-  call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:hint), 'ArcadeSortHint'])
-  call add(l:lines, l:margin . l:hint)
+  for l:hint in ['hl move   space lifts a run, space drops it   2space lifts two',
+        \ 'u undo   r reshuffle   q quit']
+    call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:hint), 'ArcadeSortHint'])
+    call add(l:lines, l:margin . l:hint)
+  endfor
 
   return {'lines': l:lines, 'hl': l:hl}
 endfunction
@@ -448,7 +526,7 @@ endfunction
 
 function! s:on_cursor(ctl, key) abort
   let l:delta = index(['h', '<Left>'], a:key) >= 0 ? -1 : 1
-  call arcade#sort#cursor_move(a:ctl.state, l:delta)
+  call arcade#sort#cursor_move(a:ctl.state, l:delta, get(a:ctl, 'count', 0))
 endfunction
 
 function! s:on_space(ctl, key) abort
@@ -456,7 +534,7 @@ function! s:on_space(ctl, key) abort
     call arcade#sort#next_level(a:ctl.state)
     return
   endif
-  call arcade#sort#toggle(a:ctl.state)
+  call arcade#sort#toggle(a:ctl.state, get(a:ctl, 'count', 0))
 endfunction
 
 function! s:on_undo(ctl, key) abort

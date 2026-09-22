@@ -333,10 +333,14 @@ function! s:test_sort_draw() abort
   let l:st = arcade#sort#new(21)
   call s:check_frame(arcade#sort#draw(l:st), 'sort draw')
   let l:st.held = 1
+  let l:st.held_n = 1
   let l:st.held_from = 0
   let l:st.cursor = 2
   call s:check_frame(arcade#sort#draw(l:st), 'sort draw with a ball in hand')
+  let l:st.held_n = 4
+  call s:check_frame(arcade#sort#draw(l:st), 'sort draw with a full hand')
   let l:st.held = -1
+  let l:st.held_n = 0
   let l:st.level_done = 1
   call s:check_frame(arcade#sort#draw(l:st), 'sort clear banner')
   let l:st.level_done = 0
@@ -353,6 +357,119 @@ function! s:test_sort_draw() abort
   let l:widths = map(copy(arcade#sort#draw(l:wide).lines), 'strdisplaywidth(v:val)')
   call s:ok(max(l:widths) < 72, 'sort board fits a modest window')
   call s:check_frame(arcade#sort#draw(l:wide), 'sort wide draw')
+endfunction
+
+function! s:test_sort_run_length() abort
+  call s:eq(arcade#sort#run_length([]), 0, 'empty tube has no run')
+  call s:eq(arcade#sort#run_length([1]), 1, 'single ball is a run of one')
+  call s:eq(arcade#sort#run_length([2, 1, 1, 1]), 3, 'run stops at a different colour')
+  call s:eq(arcade#sort#run_length([1, 1, 1, 1]), 4, 'a whole tube can be one run')
+  call s:eq(arcade#sort#run_length([1, 1, 2]), 1, 'only the top counts')
+endfunction
+
+function! s:test_sort_stack_grab() abort
+  let l:st = arcade#sort#new(31)
+  let l:st.tubes = [[2, 1, 1, 1], [1], [], [3, 3, 3, 3]]
+  let l:st.cursor = 0
+
+  call s:eq(arcade#sort#grab(l:st), 3, 'space lifts the whole run')
+  call s:eq(l:st.held, 1, 'the handful is one colour')
+  call s:eq(l:st.held_n, 3, 'three balls in hand')
+  call s:eq(l:st.tubes[0], [2], 'the run left the tube')
+
+  let l:st.cursor = 2
+  call s:eq(arcade#sort#drop(l:st), 3, 'the whole handful lands on an empty tube')
+  call s:eq(l:st.tubes[2], [1, 1, 1], 'three balls landed')
+  call s:eq(l:st.held_n, 0, 'hand is empty')
+  call s:eq(l:st.moves, 3, 'moves count balls, not keystrokes')
+
+  " One undo step covers the whole handful.
+  call s:ok(arcade#sort#undo(l:st), 'undo after a stack drop')
+  call s:eq(l:st.tubes[0], [2, 1, 1, 1], 'the run came back whole')
+  call s:eq(l:st.tubes[2], [], 'the target is empty again')
+  call s:eq(l:st.moves, 0, 'move count rewound past the whole handful')
+endfunction
+
+function! s:test_sort_count_grab() abort
+  let l:st = arcade#sort#new(32)
+  let l:st.tubes = [[1, 1, 1], [2, 2], [], []]
+  let l:st.cursor = 0
+
+  call s:eq(arcade#sort#grab(l:st, 2), 2, '2space lifts two of three')
+  call s:eq(l:st.tubes[0], [1], 'one ball stayed behind')
+  let l:st.cursor = 2
+  call s:eq(arcade#sort#drop(l:st), 2, 'both land')
+
+  let l:st.cursor = 0
+  call s:eq(arcade#sort#grab(l:st, 9), 1, 'a count past the run takes the run')
+  let l:st.cursor = 3
+  call s:eq(arcade#sort#drop(l:st), 1, 'and drops it')
+
+  " A count on the drop splits the handful the other way.
+  let l:st.tubes = [[1, 1, 1, 1], [], []]
+  let l:st.cursor = 0
+  call s:eq(arcade#sort#grab(l:st), 4, 'lift four')
+  let l:st.cursor = 1
+  call s:eq(arcade#sort#drop(l:st, 1), 1, '1space drops one of four')
+  call s:eq(l:st.held_n, 3, 'three stay in hand')
+  call s:eq(l:st.held_from, 0, 'the rest still belong to the source tube')
+  call s:ok(arcade#sort#undo(l:st), 'undo puts the rest back first')
+  call s:eq(l:st.tubes[0], [1, 1, 1], 'the held balls went home')
+  call s:eq(l:st.held_n, 0, 'hand empty after the put-back')
+endfunction
+
+" The manoeuvre this is all for: three in hand, a tube with room for two,
+" the last one goes somewhere else.
+function! s:test_sort_partial_drop() abort
+  let l:st = arcade#sort#new(33)
+  let l:st.tubes = [[1, 1, 1], [2, 1], [], [4, 4, 4, 4]]
+  let l:st.cursor = 0
+  call s:eq(arcade#sort#grab(l:st), 3, 'lift the run of three')
+
+  let l:st.cursor = 1
+  call s:eq(arcade#sort#drop(l:st), 2, 'only what fits goes in')
+  call s:eq(l:st.tubes[1], [2, 1, 1, 1], 'target is full')
+  call s:eq(l:st.held_n, 1, 'the odd one stays in hand')
+  call s:eq(l:st.held, 1, 'still the same colour')
+
+  let l:st.cursor = 2
+  call s:eq(arcade#sort#drop(l:st), 1, 'the last one goes elsewhere')
+  call s:eq(l:st.tubes[2], [1], 'and lands')
+  call s:eq(l:st.held_n, 0, 'hand empty')
+
+  " Two drops, two undos, and no ball is lost in between.
+  call s:ok(arcade#sort#undo(l:st), 'undo the second drop')
+  call s:eq(l:st.held_n, 0, 'undo of a completed drop does not refill the hand')
+  call s:ok(arcade#sort#undo(l:st), 'undo the first drop')
+  call s:eq(l:st.tubes[0], [1, 1, 1], 'the whole run is back')
+  call s:eq(l:st.tubes[1], [2, 1], 'the target is as it was')
+  call s:eq(l:st.tubes[2], [], 'and so is the spare')
+endfunction
+
+function! s:test_sort_refused_drop_keeps_hand() abort
+  let l:st = arcade#sort#new(34)
+  let l:st.tubes = [[1, 1], [2, 2, 2, 2], [3]]
+  let l:st.cursor = 0
+  call s:eq(arcade#sort#grab(l:st), 2, 'lift the pair')
+
+  let l:st.cursor = 1
+  call s:eq(arcade#sort#drop(l:st), 0, 'a full tube takes nothing')
+  call s:eq(l:st.held_n, 2, 'the pair is still in hand')
+  let l:st.cursor = 2
+  call s:eq(arcade#sort#drop(l:st), 0, 'a mismatched top takes nothing')
+  call s:eq(l:st.held_n, 2, 'still in hand')
+  call s:eq(l:st.tubes[0], [], 'and still out of the source tube')
+  call s:eq(l:st.moves, 0, 'refused drops cost nothing')
+endfunction
+
+function! s:test_sort_move_n() abort
+  let l:st = arcade#sort#new(35)
+  let l:st.tubes = [[2, 1, 1, 1], [1], [], []]
+  call s:eq(arcade#sort#move_n(l:st, 0, 1, 3), 3, 'three fit on a matching top')
+  call s:eq(l:st.tubes[1], [1, 1, 1, 1], 'target filled')
+  call s:eq(arcade#sort#move_n(l:st, 0, 1, 1), 0, 'nothing more fits')
+  call s:eq(arcade#sort#move_n(l:st, 0, 2, 9), 1, 'a count past the run moves the run')
+  call s:eq(arcade#sort#move_n(l:st, 2, 3, 0), 0, 'a zero move is no move')
 endfunction
 
 " The generator hands out the un-move walk it dealt from; replayed
@@ -460,6 +577,17 @@ function! s:test_surface() abort
   call s:ok(b:arcade.state.held >= 0, 'space lifts a ball')
   call arcade#ui#key('<Space>')
   call s:eq(b:arcade.state.held, -1, 'space puts it back down')
+  " A count reaches the handler through the controller dict.
+  let b:arcade.state.tubes = [[1, 1, 1], [2], [], [3]]
+  let b:arcade.state.cursor = 0
+  call arcade#ui#key('<Space>', 2)
+  call s:eq(b:arcade.state.held_n, 2, 'a count lifts that many balls')
+  call arcade#ui#key('<Space>')
+  call s:eq(b:arcade.state.held_n, 0, 'and space puts them back')
+  let l:cursor = b:arcade.state.cursor
+  call arcade#ui#key('h', 2)
+  call s:eq(b:arcade.state.cursor, (l:cursor - 2 + len(b:arcade.state.tubes))
+        \ % len(b:arcade.state.tubes), 'a count walks the cursor that far')
   silent! bwipeout!
 
   let l:bufnr = arcade#crawl#start(12)
@@ -479,6 +607,9 @@ let s:tests = [
       \ 's:test_crawl_playout', 's:test_sort_level', 's:test_sort_rules',
       \ 's:test_sort_hand', 's:test_sort_clear', 's:test_sort_stuck',
       \ 's:test_sort_levels_are_playable', 's:test_sort_draw',
+      \ 's:test_sort_run_length', 's:test_sort_stack_grab', 's:test_sort_count_grab',
+      \ 's:test_sort_partial_drop', 's:test_sort_refused_drop_keeps_hand',
+      \ 's:test_sort_move_n',
       \ 's:test_sort_solvable', 's:test_sort_playout', 's:test_surface']
 
 for s:name in s:tests
