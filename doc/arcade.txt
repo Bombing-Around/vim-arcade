@@ -94,8 +94,10 @@ Tubes of coloured balls, one hand. Stack every colour into a tube of its own.
     h l  <Left> <Right>                   move the hand between tubes
     <Space>  <CR>                         lift the top run, or drop it
     u                                     undo (32 steps; returns a handful)
-    ?                                     hint: point at a move (costs one)
-    t                                     take a spare tube (costs one)
+    ?                                     hint: point at a move (costs more
+                                          every time you ask)
+    t                                     take a spare tube (forfeits the
+                                          level's record)
     z                                     toggle zen
     r                                     reshuffle this level
     R                                     abandon the run, deal a new one
@@ -126,12 +128,19 @@ There are no points. A cleared level is worth the number of moves it took,
 each level keeps its own record, and beating it is what the banner says.
 A run's tally is simply how many levels it cleared.
 
-? and t are help, and help is not free: a hint costs a move and so does a
-spare tube, of which there are two a level. A hint ranks the legal moves --
-finish a tube, empty a tube, add to a colour, anything -- rather than
-consulting the solution the level was dealt from, which goes stale as soon
-as the board leaves the dealt position. An unlimited supply of spare tubes
-would solve every board, hence the two.
+? and t are help, and help is not free.
+
+A hint costs a move the first time, two the second, three the third, and so
+on; the price resets with the level, like the move count it charges to. It
+ranks the legal moves -- finish a tube, empty a tube, add to a colour,
+anything -- rather than consulting the solution the level was dealt from,
+which goes stale as soon as the board leaves the dealt position.
+
+A spare tube is not priced in moves at all, because a widened board is a
+different board and its move count is no longer worth comparing. Taking one
+turns the level zen: no record, and it does not count towards the run. |u|
+hands the tube back and scoring with it, and the next level starts clean.
+There are two a level, since an unlimited supply solves every board.
 
                                                           *g:arcade_sort_zen*
 z toggles zen: no records, no tally, just the board and the move count. A

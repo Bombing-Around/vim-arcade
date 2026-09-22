@@ -55,7 +55,9 @@ function! arcade#sort#new(...) abort
         \ 'cleared': 0,
         \ 'zen': get(g:, 'arcade_sort_zen', 0) ? 1 : 0,
         \ 'spares': 0,
+        \ 'hints': 0,
         \ 'assists': 0,
+        \ 'unscored': 0,
         \ 'level_best': 0,
         \ 'beat_best': 0,
         \ 'hint': [],
@@ -76,7 +78,9 @@ function! arcade#sort#build_level(st) abort
   let a:st.colors = s:colors_for(a:st.level)
   let a:st.cursor = 0
   let a:st.spares = 0
+  let a:st.hints = 0
   let a:st.assists = 0
+  let a:st.unscored = 0
   let a:st.hint = []
   let a:st.beat_best = 0
   let a:st.level_best = a:st.zen ? 0 : arcade#score#level_best('sort', a:st.level)
@@ -216,7 +220,7 @@ function! arcade#sort#move_n(st, src, dst, n) abort
     return 0
   endif
   call add(a:st.history, {'tubes': deepcopy(a:st.tubes), 'moves': a:st.moves,
-        \ 'spares': a:st.spares})
+        \ 'spares': a:st.spares, 'unscored': a:st.unscored})
   if len(a:st.history) > s:UNDO_DEPTH
     call remove(a:st.history, 0)
   endif
@@ -242,6 +246,12 @@ endfunction
 " Hanging it off the move alone left the quieter ways of completing a
 " board -- putting a lifted ball straight back, undoing into place --
 " finishing the level in silence.
+" Zen is the run-wide switch; unscored is this level having taken a spare
+" tube. Either way nothing is written down.
+function! arcade#sort#scored(st) abort
+  return !a:st.zen && !get(a:st, 'unscored', 0)
+endfunction
+
 function! arcade#sort#refresh(st) abort
   if a:st.level_done
     return 0
@@ -249,8 +259,8 @@ function! arcade#sort#refresh(st) abort
   if arcade#sort#solved(a:st)
     let a:st.level_done = 1
     let a:st.stuck = 0
-    let a:st.cleared += 1
-    if !a:st.zen
+    if arcade#sort#scored(a:st)
+      let a:st.cleared += 1
       " Beating a record and setting the first one are different things
       " to say, so the previous mark has to be read before it is moved.
       let l:prev = arcade#score#level_best('sort', a:st.level)
@@ -406,6 +416,10 @@ function! arcade#sort#undo(st) abort
   let a:st.tubes = l:prev.tubes
   let a:st.moves = l:prev.moves
   let a:st.spares = get(l:prev, 'spares', a:st.spares)
+  let a:st.unscored = get(l:prev, 'unscored', a:st.unscored)
+  if !a:st.zen
+    let a:st.level_best = arcade#score#level_best('sort', a:st.level)
+  endif
   let a:st.cursor = arcade#util#clamp(a:st.cursor, 0, len(a:st.tubes) - 1)
   let a:st.stuck = 0
   let a:st.message = 'Undid one move.'
@@ -447,8 +461,11 @@ function! arcade#sort#draw(st) abort
   call add(l:lines, l:head)
   let l:stats = printf('level %d   colours %d   moves %d', a:st.level,
         \ a:st.colors, a:st.moves)
-  if a:st.zen
+  if !arcade#sort#scored(a:st)
+    " A level that took a spare tube is zen too, but the run it sits in
+    " still has a tally worth showing.
     let l:stats .= '   zen'
+    let l:stats .= a:st.zen ? '' : printf('   cleared %d', a:st.cleared)
   else
     let l:stats .= a:st.level_best > 0 ? printf('   best %d', a:st.level_best) : ''
     let l:stats .= printf('   cleared %d', a:st.cleared)
@@ -538,9 +555,11 @@ function! arcade#sort#draw(st) abort
   if a:st.level_done
     let l:banner = printf('LEVEL CLEAR in %d move%s', a:st.moves,
           \ a:st.moves == 1 ? '' : 's')
-    if !a:st.zen && a:st.beat_best
+    if !arcade#sort#scored(a:st)
+      let l:banner .= a:st.zen ? '' : '  --  zen, no record'
+    elseif a:st.beat_best
       let l:banner .= '  --  a new best'
-    elseif !a:st.zen && a:st.level_best > 0 && a:st.level_best < a:st.moves
+    elseif a:st.level_best > 0 && a:st.level_best < a:st.moves
       let l:banner .= printf('  --  best %d', a:st.level_best)
     endif
     let l:banner .= '  --  space for the next one'
@@ -548,7 +567,7 @@ function! arcade#sort#draw(st) abort
     call add(l:lines, l:margin . l:banner)
   elseif a:st.stuck
     let l:banner = a:st.spares < s:MAX_SPARES
-          \ ? 'STUCK  --  u undoes, t adds a spare tube, r reshuffles'
+          \ ? 'STUCK  --  u undoes, t adds a tube (zen), r reshuffles'
           \ : 'STUCK  --  u undoes, r reshuffles this level'
     call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:banner), 'ArcadeSortStuck'])
     call add(l:lines, l:margin . l:banner)
@@ -620,18 +639,25 @@ function! arcade#sort#hint(st) abort
     let a:st.message = 'No legal move to point at.'
     return 0
   endif
+  " Each one costs more than the last: a nudge is cheap, leaning on it is
+  " not. The tally is per level, like the move count it charges against.
+  let l:cost = a:st.hints + 1
   let a:st.hint = l:mv
-  let a:st.moves += 1
-  let a:st.total_moves += 1
+  let a:st.hints += 1
+  let a:st.moves += l:cost
+  let a:st.total_moves += l:cost
   let a:st.assists += 1
   let a:st.cursor = l:mv[0]
-  let a:st.message = printf('Hint: tube %d onto tube %d. That cost a move.',
-        \ l:mv[0] + 1, l:mv[1] + 1)
-  return 1
+  let a:st.message = printf('Hint: tube %d onto tube %d. That cost %d move%s; the next costs %d.',
+        \ l:mv[0] + 1, l:mv[1] + 1, l:cost, l:cost == 1 ? '' : 's', l:cost + 1)
+  return l:cost
 endfunction
 
-" Adds an empty tube to work in. Costs a move, and there are only so
-" many -- an unlimited supply of spare tubes solves every board.
+" Adds an empty tube to work in. A spare tube does not make a board
+" harder to read, it makes it a different board, so the level stops being
+" scored the moment you take one: no record, and it does not count
+" towards the run. What is left is the board and the move count, which
+" is zen by another name. Undo hands the tube back and scoring with it.
 function! arcade#sort#spare(st) abort
   if a:st.level_done
     return 0
@@ -641,24 +667,24 @@ function! arcade#sort#spare(st) abort
     return 0
   endif
   call add(a:st.history, {'tubes': deepcopy(a:st.tubes), 'moves': a:st.moves,
-        \ 'spares': a:st.spares})
+        \ 'spares': a:st.spares, 'unscored': a:st.unscored})
   if len(a:st.history) > s:UNDO_DEPTH
     call remove(a:st.history, 0)
   endif
   call add(a:st.tubes, [])
   let a:st.spares += 1
   let a:st.assists += 1
-  let a:st.moves += 1
-  let a:st.total_moves += 1
+  let a:st.unscored = 1
   let a:st.cursor = len(a:st.tubes) - 1
-  let a:st.message = 'A spare tube. That cost a move.'
+  let a:st.message = 'A spare tube -- this level is zen now: no record, no tally.'
   call arcade#sort#refresh(a:st)
   return 1
 endfunction
 
 function! arcade#sort#zen(st) abort
   let a:st.zen = a:st.zen ? 0 : 1
-  let a:st.level_best = a:st.zen ? 0 : arcade#score#level_best('sort', a:st.level)
+  let a:st.level_best = arcade#sort#scored(a:st)
+        \ ? arcade#score#level_best('sort', a:st.level) : 0
   let a:st.message = a:st.zen
         \ ? 'Zen: no scores, no records, just tubes.'
         \ : 'Scoring on: moves count again.'

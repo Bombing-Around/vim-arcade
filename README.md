@@ -74,9 +74,11 @@ Levels run from four colours to nine, two spare tubes throughout. Each one is
 dealt by walking backwards from a solved board along inverted moves, so every
 level is winnable — though a careless line still strands the board.
 
-Stuck, or just want a nudge? `?` points at a move worth making and `t` hands
-you a spare tube (two a level). Neither is free: each costs a move, the same as
-shifting a ball and thinking better of it.
+Stuck, or just want a nudge? `?` points at a move worth making, and it gets
+dearer every time you ask — one move, then two, then three. `t` hands you a
+spare tube, and that is not a price so much as a decision: the level stops
+being scored the moment you take one. No record, no tally, just the board and
+the counter. Undo hands the tube back and scoring with it.
 
 There are no points. A level is scored by how few moves it took, and each level
 keeps its own record — beat it and the board says so. `z` is zen: no records,

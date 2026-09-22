@@ -717,10 +717,10 @@ function! s:test_sort_hint() abort
   call arcade#sort#move_n(l:trial, l:mv[0], l:mv[1], 4)
   call s:ok(arcade#sort#solved(l:trial), 'and it is the move that wins')
 
-  call s:ok(arcade#sort#hint(l:st), 'the hint lands')
+  call s:eq(arcade#sort#hint(l:st), 1, 'the hint lands and costs a move')
   call s:eq(l:st.moves, l:moves + 1, 'a hint costs a move')
   call s:eq(l:st.hint, l:mv, 'and marks the tubes')
-  call s:ok(l:st.message =~# 'cost a move', 'and says so')
+  call s:ok(l:st.message =~# 'cost 1 move', 'and says what it cost')
   call s:eq(l:st.cursor, l:mv[0], 'and puts the hand on the source tube')
 
   " Making a move clears the mark.
@@ -753,14 +753,19 @@ function! s:test_sort_spare_tube() abort
   call s:ok(arcade#sort#spare(l:st), 't adds a tube')
   call s:eq(len(l:st.tubes), l:tubes + 1, 'the board grew')
   call s:eq(l:st.tubes[-1], [], 'and the new tube is empty')
-  call s:eq(l:st.moves, l:moves + 1, 'a spare tube costs a move')
   call s:eq(l:st.cursor, l:tubes, 'and the hand moves to it')
   call s:ok(!l:st.stuck, 'the dead end is a dead end no more')
 
-  " Undo takes it back, move count and all.
+  " Taking one is the end of scoring for this board.
+  call s:ok(l:st.unscored, 'the level is forfeit')
+  call s:ok(!arcade#sort#scored(l:st), 'and stops being scored')
+  call s:ok(l:st.message =~# 'zen', 'and says so')
+
+  " Undo hands the tube back, and scoring with it.
   call s:ok(arcade#sort#undo(l:st), 'undo the tube')
   call s:eq(len(l:st.tubes), l:tubes, 'the board shrank back')
-  call s:eq(l:st.moves, l:moves, 'and the move came back')
+  call s:eq(l:st.moves, l:moves, 'the move count is where it was')
+  call s:ok(!l:st.unscored, 'and the level is scored again')
   call s:ok(l:st.cursor < len(l:st.tubes), 'the hand is back on the board')
 
   " There is a limit, or every board is winnable for free.
@@ -774,7 +779,52 @@ function! s:test_sort_spare_tube() abort
   " A dealt level starts fresh.
   call arcade#sort#build_level(l:st)
   call s:eq(l:st.spares, 0, 'a new level restocks the spares')
+  call s:ok(!l:st.unscored, 'and is scored again')
   call s:eq(len(l:st.tubes), l:st.colors + 2, 'and is back to its own width')
+endfunction
+
+" A level bought with a spare tube leaves no trace: no record for the
+" level, and it does not count towards the run either.
+function! s:test_sort_spare_forfeits_the_level() abort
+  call arcade#score#reset('sort')
+  let l:st = arcade#sort#new(81)
+  let l:st.colors = 2
+  let l:st.tubes = [[1, 1, 1, 1], [2, 2, 2], [2], []]
+  let l:st.moves = 6
+  call s:ok(arcade#sort#spare(l:st), 'take a tube')
+  call s:ok(arcade#sort#move(l:st, 2, 1), 'then finish the board')
+  call s:ok(l:st.level_done, 'the level still clears')
+  call s:eq(l:st.cleared, 0, 'but does not count towards the run')
+  call s:eq(arcade#score#level_best('sort', l:st.level), 0, 'and sets no record')
+  call s:ok(!l:st.beat_best, 'and beats nothing')
+
+  " The next level is scored again.
+  call s:ok(arcade#sort#next_level(l:st), 'move on')
+  call s:ok(arcade#sort#scored(l:st), 'the next level counts')
+  call arcade#score#reset('sort')
+endfunction
+
+" A nudge is cheap; leaning on it is not.
+function! s:test_sort_hint_cost_escalates() abort
+  let l:st = arcade#sort#new(82)
+  let l:st.colors = 2
+  let l:st.tubes = [[1, 1, 1], [2, 2, 2, 2], [1], []]
+  let l:moves = l:st.moves
+
+  call s:eq(arcade#sort#hint(l:st), 1, 'the first hint costs one')
+  call s:eq(l:st.moves, l:moves + 1, 'and lands on the counter')
+  call s:eq(arcade#sort#hint(l:st), 2, 'the second costs two')
+  call s:eq(l:st.moves, l:moves + 3, 'cumulatively')
+  call s:eq(arcade#sort#hint(l:st), 3, 'the third costs three')
+  call s:eq(l:st.moves, l:moves + 6, 'still cumulative')
+  call s:ok(l:st.message =~# 'next costs 4', 'and it says what the next one costs')
+
+  " Hints do not forfeit the level -- paying for them is the point.
+  call s:ok(arcade#sort#scored(l:st), 'a hinted level is still scored')
+
+  " The price resets with the level, like the move count it charges to.
+  call arcade#sort#build_level(l:st)
+  call s:eq(l:st.hints, 0, 'a new level forgets the hints')
 endfunction
 
 " A board with a spare tube on it has to survive being put down.
@@ -987,7 +1037,8 @@ let s:tests = [
       \ 's:test_sort_stuck_by_hand', 's:test_sort_solvable_by_hand',
       \ 's:test_sort_solvable', 's:test_sort_playout',
       \ 's:test_sort_zen', 's:test_sort_level_best', 's:test_sort_hint',
-      \ 's:test_sort_spare_tube', 's:test_sort_resume_with_spare',
+      \ 's:test_sort_spare_tube', 's:test_sort_spare_forfeits_the_level',
+      \ 's:test_sort_hint_cost_escalates', 's:test_sort_resume_with_spare',
       \ 's:test_sort_suspend_round_trip', 's:test_sort_resume_rejects_junk',
       \ 's:test_sort_resume_through_the_surface', 's:test_sort_escape_stays_put',
       \ 's:test_score_run_dedupe', 's:test_surface']
