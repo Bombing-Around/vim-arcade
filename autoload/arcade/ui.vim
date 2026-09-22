@@ -10,6 +10,9 @@
 " A count typed before the key ("3l") is left in controller.count, 0 when
 " none was typed; it rides the dict rather than the handler signature so a
 " game that does not care about counts needs no changes.
+"
+" An optional 'on_close' funcref(ctl) is called once when the surface goes
+" away, however it goes away.
 
 let s:ns = -1
 let s:prop_types = {}
@@ -66,7 +69,49 @@ function! s:setup_buffer(ctl) abort
   let b:arcade = a:ctl
   let a:ctl.bufnr = l:bufnr
   call s:bind_keys(a:ctl)
+  call s:watch_close(a:ctl)
   return l:bufnr
+endfunction
+
+" A game can have more to lose than a window -- an unfinished run worth
+" resuming -- and the buffer can go without anyone pressing q: :bwipeout,
+" a closed tab, or Vim quitting outright. Buffer-local events cover the
+" first two; VimLeavePre is not a buffer event, so it sweeps every live
+" surface instead.
+function! s:watch_close(ctl) abort
+  if !has_key(a:ctl, 'on_close')
+    return
+  endif
+  augroup vim_arcade_surface
+    execute printf('autocmd! BufWipeout,BufUnload <buffer=%d> call arcade#ui#closing(%d)',
+          \ a:ctl.bufnr, a:ctl.bufnr)
+    autocmd! VimLeavePre * call arcade#ui#closing_all()
+  augroup END
+endfunction
+
+" Tells a controller its surface is going away, once and once only.
+function! arcade#ui#closing(bufnr) abort
+  let l:ctl = getbufvar(a:bufnr, 'arcade', {})
+  if type(l:ctl) != v:t_dict || empty(l:ctl) || get(l:ctl, 'closed', 0)
+    return
+  endif
+  if !has_key(l:ctl, 'on_close')
+    return
+  endif
+  let l:ctl.closed = 1
+  try
+    call call(l:ctl.on_close, [l:ctl])
+  catch
+    " Going away is not the moment to raise an error at the player.
+  endtry
+endfunction
+
+function! arcade#ui#closing_all() abort
+  for l:bufnr in range(1, bufnr('$'))
+    if bufexists(l:bufnr)
+      call arcade#ui#closing(l:bufnr)
+    endif
+  endfor
 endfunction
 
 " A mapping's {rhs}, even built via execute() and string(), still goes

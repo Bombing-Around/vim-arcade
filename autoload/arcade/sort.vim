@@ -63,6 +63,7 @@ function! arcade#sort#new(...) abort
         \ 'history': [],
         \ 'solution': [],
         \ 'best': arcade#score#best('sort'),
+        \ 'run': strftime('%Y%m%d%H%M%S'),
         \ 'rng': arcade#util#rng_new(l:seed),
         \ }
   call arcade#sort#build_level(l:st)
@@ -533,12 +534,75 @@ function! arcade#sort#draw(st) abort
     call add(l:lines, '')
   endif
   for l:hint in ['hl move   space lifts a run, space drops it   2space lifts two',
-        \ 'u undo   r reshuffle   q quit']
+        \ 'u undo   r reshuffle   R new run   q saves and quits']
     call add(l:hl, [len(l:lines), strlen(l:margin), strlen(l:margin . l:hint), 'ArcadeSortHint'])
     call add(l:lines, l:margin . l:hint)
   endfor
 
   return {'lines': l:lines, 'hl': l:hl}
+endfunction
+
+" ------------------------------------------------------------ suspending
+" A run has no end -- the levels keep coming -- so putting the game down
+" and picking it up later is the only way a run ever finishes. What gets
+" stored is the state with the hand emptied back into its tube: a ball
+" in mid-air is not a thing a saved game should have to describe.
+
+function! arcade#sort#suspend(st) abort
+  let l:snap = deepcopy(a:st)
+  if l:snap.held >= 0
+    call extend(l:snap.tubes[l:snap.held_from], repeat([l:snap.held], l:snap.held_n))
+    let l:snap.held = -1
+    let l:snap.held_n = 0
+    let l:snap.held_from = -1
+  endif
+  let l:snap.message = ''
+  let l:snap.best = 0
+  return l:snap
+endfunction
+
+" Rebuilds a state from stored data, or returns {} if it cannot be
+" trusted. Anything short of a complete, consistent board is refused:
+" a half-restored puzzle is worse than a fresh one.
+function! arcade#sort#resume(data) abort
+  if type(a:data) != v:t_dict
+    return {}
+  endif
+  for l:key in ['level', 'colors', 'tubes', 'score', 'moves']
+    if !has_key(a:data, l:key)
+      return {}
+    endif
+  endfor
+  let l:st = extend(arcade#sort#new(), deepcopy(a:data))
+  if type(l:st.tubes) != v:t_list || len(l:st.tubes) != l:st.colors + s:FREE
+    return {}
+  endif
+  let l:counts = {}
+  for l:tube in l:st.tubes
+    if type(l:tube) != v:t_list || len(l:tube) > s:CAP
+      return {}
+    endif
+    for l:ball in l:tube
+      if type(l:ball) != v:t_number || l:ball < 1 || l:ball > l:st.colors
+        return {}
+      endif
+      let l:counts[l:ball] = get(l:counts, l:ball, 0) + 1
+    endfor
+  endfor
+  for l:c in range(1, l:st.colors)
+    if get(l:counts, l:c, 0) != s:CAP
+      return {}
+    endif
+  endfor
+  let l:st.held = -1
+  let l:st.held_n = 0
+  let l:st.held_from = -1
+  let l:st.cursor = arcade#util#clamp(get(l:st, 'cursor', 0), 0, len(l:st.tubes) - 1)
+  let l:st.best = arcade#score#best('sort')
+  let l:st.recorded = 0
+  let l:st.message = ''
+  call arcade#sort#refresh(l:st)
+  return l:st
 endfunction
 
 " --------------------------------------------------------------- session
@@ -571,22 +635,57 @@ function! s:maybe_record(st) abort
   endif
   let a:st.recorded = 1
   call arcade#score#record('sort', a:st.score,
-        \ {'level': a:st.level, 'cleared': a:st.cleared, 'moves': a:st.total_moves})
+        \ {'level': a:st.level, 'cleared': a:st.cleared,
+        \  'moves': a:st.total_moves, 'run': get(a:st, 'run', '')})
   let a:st.best = arcade#score#best('sort')
 endfunction
 
-function! s:on_quit(ctl, key) abort
+" Abandons the run and deals a fresh one. The run being walked away from
+" is recorded on its way out, and the saved game goes with it.
+function! s:on_new_run(ctl, key) abort
   call s:maybe_record(a:ctl.state)
+  call arcade#save#clear('sort')
+  let a:ctl.state = arcade#sort#new()
+  let a:ctl.state.message = 'New run.'
+endfunction
+
+" <Esc> is muscle memory in normal mode, and a run here can be many
+" levels deep. It stays put and points at q rather than closing.
+function! s:on_escape(ctl, key) abort
+  let a:ctl.state.message = 'q saves and quits -- <Esc> is disabled so a stray tap does not put the run down.'
+endfunction
+
+function! s:on_quit(ctl, key) abort
   call arcade#ui#close()
 endfunction
 
+" Whichever way the surface goes away -- q, :bwipeout, a closed tab, or
+" Vim quitting -- the run is written down so it can be picked up again.
+function! s:on_close(ctl) abort
+  call s:maybe_record(a:ctl.state)
+  call arcade#save#put('sort', arcade#sort#suspend(a:ctl.state))
+endfunction
+
 function! arcade#sort#start(...) abort
+  " An explicit seed means "deal me this board" (tests, mostly), so it
+  " never picks up a saved run.
+  let l:state = {}
+  if !a:0
+    let l:state = arcade#sort#resume(arcade#save#get('sort'))
+    if !empty(l:state)
+      let l:state.message = 'Picked up where you left off -- R starts a new run.'
+    endif
+  endif
+  if empty(l:state)
+    let l:state = call('arcade#sort#new', a:000)
+  endif
   let l:ctl = {
         \ 'name': 'arcade://sort',
         \ 'filetype': 'arcadesort',
-        \ 'state': call('arcade#sort#new', a:000),
+        \ 'state': l:state,
         \ 'draw': function('arcade#sort#draw'),
         \ 'keys': {},
+        \ 'on_close': function('s:on_close'),
         \ }
   for l:key in ['h', 'l', '<Left>', '<Right>']
     let l:ctl.keys[l:key] = function('s:on_cursor')
@@ -596,6 +695,8 @@ function! arcade#sort#start(...) abort
   endfor
   let l:ctl.keys['u'] = function('s:on_undo')
   let l:ctl.keys['r'] = function('s:on_restart')
+  let l:ctl.keys['R'] = function('s:on_new_run')
   let l:ctl.keys['q'] = function('s:on_quit')
+  let l:ctl.keys['<Esc>'] = function('s:on_escape')
   return arcade#ui#open(l:ctl)
 endfunction

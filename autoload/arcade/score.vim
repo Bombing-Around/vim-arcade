@@ -3,19 +3,8 @@
 let s:cache = {}
 let s:loaded = 0
 
-function! s:data_dir() abort
-  if exists('g:arcade_data_dir')
-    return expand(g:arcade_data_dir)
-  endif
-  if has('nvim')
-    return stdpath('data') . '/vim-arcade'
-  endif
-  let l:base = empty($XDG_DATA_HOME) ? expand('~/.local/share') : $XDG_DATA_HOME
-  return l:base . '/vim-arcade'
-endfunction
-
 function! s:path() abort
-  return s:data_dir() . '/scores.json'
+  return arcade#util#data_dir() . '/scores.json'
 endfunction
 
 function! s:load() abort
@@ -23,36 +12,14 @@ function! s:load() abort
     return s:cache
   endif
   let s:loaded = 1
-  let s:cache = {}
-  let l:path = s:path()
-  if !filereadable(l:path)
-    return s:cache
-  endif
-  try
-    let l:raw = join(readfile(l:path), "\n")
-    let l:data = json_decode(l:raw)
-    if type(l:data) == v:t_dict
-      let s:cache = l:data
-    endif
-  catch
-    " Corrupt score file: start fresh rather than breaking the game.
-    let s:cache = {}
-  endtry
+  " A corrupt score file starts fresh rather than breaking the game.
+  let s:cache = arcade#util#read_json(s:path())
   return s:cache
 endfunction
 
 function! s:save() abort
-  let l:dir = s:data_dir()
-  try
-    if !isdirectory(l:dir)
-      call mkdir(l:dir, 'p', 0700)
-    endif
-    let l:tmp = s:path() . '.tmp'
-    call writefile([json_encode(s:cache)], l:tmp)
-    call rename(l:tmp, s:path())
-  catch
-    " Read-only HOME, sandbox, etc. Scores stay in-memory for this session.
-  endtry
+  " Read-only HOME, sandbox, etc: scores stay in-memory for this session.
+  call arcade#util#write_json(s:path(), s:cache)
 endfunction
 
 function! arcade#score#best(game) abort
@@ -76,7 +43,17 @@ function! arcade#score#record(game, score, ...) abort
     let l:entry.best = a:score
   endif
   let l:run = extend({'score': a:score, 'at': strftime('%Y-%m-%d %H:%M')}, l:meta)
-  let l:entry.runs = ([l:run] + get(l:entry, 'runs', []))[0:9]
+  " A run that spans sessions reports itself every time it is put down.
+  " Keyed by meta.run, those reports update one row instead of filling
+  " the history with a row per quit.
+  let l:runs = get(l:entry, 'runs', [])
+  if !empty(l:runs) && !empty(get(l:meta, 'run', ''))
+        \ && get(l:runs[0], 'run', '') ==# l:meta.run
+    let l:runs[0] = l:run
+    let l:entry.runs = l:runs
+  else
+    let l:entry.runs = ([l:run] + l:runs)[0:9]
+  endif
   let l:data[a:game] = l:entry
   let s:cache = l:data
   call s:save()

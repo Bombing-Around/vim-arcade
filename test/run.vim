@@ -2,6 +2,8 @@
 set nocompatible
 set runtimepath^=.
 filetype off
+" Keep the suite off the player's real scores and saved games.
+let g:arcade_data_dir = tempname() . '/vim-arcade-test'
 let v:errors = []
 let s:failed = 0
 
@@ -644,6 +646,125 @@ function! s:test_rng_determinism() abort
 endfunction
 
 
+" ------------------------------------------------------------ suspending
+
+function! s:test_sort_suspend_round_trip() abort
+  call arcade#save#clear('sort')
+  let l:st = arcade#sort#new(61)
+  let l:st.cursor = 0
+  call arcade#sort#grab(l:st)
+  let l:st.cursor = 4
+  call arcade#sort#drop(l:st)
+  let l:st.level = 3
+  let l:st.score = 640
+
+  " A ball in hand goes back in its tube on the way out.
+  let l:st.cursor = 2
+  call arcade#sort#grab(l:st)
+  let l:snap = arcade#sort#suspend(l:st)
+  call s:eq(l:snap.held, -1, 'a suspended game is not holding anything')
+  call s:eq(l:snap.held_n, 0, 'nor counting a handful')
+
+  call s:ok(arcade#save#put('sort', l:snap), 'the run is written down')
+  let l:back = arcade#sort#resume(arcade#save#get('sort'))
+  call s:ok(!empty(l:back), 'and read back')
+  call s:eq(l:back.level, 3, 'level survives')
+  call s:eq(l:back.score, 640, 'score survives')
+  call s:eq(l:back.moves, l:st.moves, 'move count survives')
+  call s:eq(l:back.colors, l:st.colors, 'colour count survives')
+  call s:eq(l:back.tubes, l:snap.tubes, 'the board comes back exactly')
+  call s:eq(l:back.held_n, 0, 'and comes back empty-handed')
+  call arcade#save#clear('sort')
+  call s:eq(arcade#save#get('sort'), {}, 'clearing leaves nothing behind')
+endfunction
+
+" A saved game is never precious enough to break a run over.
+function! s:test_sort_resume_rejects_junk() abort
+  call s:eq(arcade#sort#resume({}), {}, 'nothing at all is refused')
+  call s:eq(arcade#sort#resume([1, 2]), {}, 'a non-dict is refused')
+  call s:eq(arcade#sort#resume({'level': 1}), {}, 'a partial state is refused')
+
+  let l:st = arcade#sort#new(62)
+  let l:bad = arcade#sort#suspend(l:st)
+  call remove(l:bad.tubes, 0)
+  call s:eq(arcade#sort#resume(l:bad), {}, 'a board missing a tube is refused')
+
+  let l:bad2 = arcade#sort#suspend(arcade#sort#new(63))
+  for l:tube in l:bad2.tubes
+    if !empty(l:tube)
+      call remove(l:tube, 0)
+      break
+    endif
+  endfor
+  call s:eq(arcade#sort#resume(l:bad2), {}, 'a board missing a ball is refused')
+
+  let l:bad3 = arcade#sort#suspend(arcade#sort#new(64))
+  let l:bad3.tubes[0] = [99]
+  call s:eq(arcade#sort#resume(l:bad3), {}, 'a colour off the palette is refused')
+
+  let l:bad4 = arcade#sort#suspend(arcade#sort#new(65))
+  let l:bad4.tubes[0] = [1, 1, 1, 1, 1]
+  call s:eq(arcade#sort#resume(l:bad4), {}, 'an overfull tube is refused')
+endfunction
+
+function! s:test_sort_resume_through_the_surface() abort
+  call arcade#save#clear('sort')
+  let g:arcade_window = 'current'
+
+  " Play a couple of moves, then close the window without pressing q.
+  let l:bufnr = arcade#sort#start()
+  let b:arcade.state.level = 4
+  let b:arcade.state.score = 1234
+  let l:tubes = deepcopy(b:arcade.state.tubes)
+  silent! bwipeout!
+  call s:ok(!empty(arcade#save#get('sort')), 'closing the buffer saves the run')
+
+  " And it comes back.
+  call arcade#sort#start()
+  call s:eq(b:arcade.state.level, 4, 'the level came back')
+  call s:eq(b:arcade.state.score, 1234, 'the score came back')
+  call s:eq(b:arcade.state.tubes, l:tubes, 'the board came back')
+
+  " R abandons it and deals a fresh run.
+  call arcade#ui#key('R')
+  call s:eq(b:arcade.state.score, 0, 'a new run starts from nothing')
+  call s:eq(b:arcade.state.level, 1, 'and from level one')
+  call s:eq(arcade#save#get('sort'), {}, 'and the old saved run is gone')
+
+  " A seeded start is for tests and never picks up a saved run.
+  silent! bwipeout!
+  call arcade#sort#start(66)
+  call s:eq(b:arcade.state.level, 1, 'a seeded start deals its own board')
+  silent! bwipeout!
+  call arcade#save#clear('sort')
+endfunction
+
+function! s:test_sort_escape_stays_put() abort
+  call arcade#save#clear('sort')
+  let g:arcade_window = 'current'
+  let l:bufnr = arcade#sort#start(67)
+  call arcade#ui#key('<Esc>')
+  call s:eq(bufnr('%'), l:bufnr, '<Esc> leaves the game open')
+  call s:ok(b:arcade.state.message =~# 'q saves and quits', 'and says what does quit')
+  silent! bwipeout!
+  call arcade#save#clear('sort')
+endfunction
+
+" A run spanning several sittings is one row in the history, not one per
+" time it was put down.
+function! s:test_score_run_dedupe() abort
+  call arcade#score#reset('sorttest')
+  call arcade#score#record('sorttest', 100, {'run': 'abc', 'level': 2})
+  call arcade#score#record('sorttest', 400, {'run': 'abc', 'level': 5})
+  call s:eq(len(arcade#score#history('sorttest')), 1, 'one row for one run')
+  call s:eq(arcade#score#history('sorttest')[0].score, 400, 'the row keeps up')
+  call s:eq(arcade#score#best('sorttest'), 400, 'best tracks it')
+  call arcade#score#record('sorttest', 50, {'run': 'def'})
+  call s:eq(len(arcade#score#history('sorttest')), 2, 'a new run is a new row')
+  call s:eq(arcade#score#best('sorttest'), 400, 'and does not lower the best')
+  call arcade#score#reset('sorttest')
+endfunction
+
 " ------------------------------------------------------------------- buffer
 
 function! s:test_surface() abort
@@ -714,7 +835,10 @@ let s:tests = [
       \ 's:test_sort_partial_drop', 's:test_sort_refused_drop_keeps_hand',
       \ 's:test_sort_move_n', 's:test_sort_clear_every_path', 's:test_sort_clear_by_hand',
       \ 's:test_sort_stuck_by_hand', 's:test_sort_solvable_by_hand',
-      \ 's:test_sort_solvable', 's:test_sort_playout', 's:test_surface']
+      \ 's:test_sort_solvable', 's:test_sort_playout',
+      \ 's:test_sort_suspend_round_trip', 's:test_sort_resume_rejects_junk',
+      \ 's:test_sort_resume_through_the_surface', 's:test_sort_escape_stays_put',
+      \ 's:test_score_run_dedupe', 's:test_surface']
 
 for s:name in s:tests
   try

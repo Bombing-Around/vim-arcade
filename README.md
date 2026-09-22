@@ -52,6 +52,12 @@ one of what you are holding. Dropping into a tube with less room than you are
 carrying puts in what fits and keeps the rest in hand — the same manoeuvre
 without the arithmetic. One `u` puts back a whole handful.
 
+`<Esc>` is disabled: it is muscle memory in normal mode and a run can be many
+levels deep, so it stays put and points at `q` instead. The run is written down
+whenever the game closes — `q`, a wiped buffer, a closed tab or Vim quitting —
+and the next `:ArcadeSort` picks it up where you left it. `R` abandons it and
+deals a fresh run.
+
 ```
             ●
             ●            <- three in hand, hovering

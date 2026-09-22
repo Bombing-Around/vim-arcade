@@ -55,6 +55,50 @@ function! arcade#util#lpad(text, width) abort
   return l:len >= a:width ? a:text : repeat(' ', a:width - l:len) . a:text
 endfunction
 
+" ------------------------------------------------------- on-disk storage
+" Where scores and suspended games live. Both sides are best effort: an
+" unreadable or corrupt file reads as an empty dict and a write that
+" cannot land is dropped, because a read-only HOME must never break a
+" game that is only trying to remember a high score.
+
+function! arcade#util#data_dir() abort
+  if exists('g:arcade_data_dir')
+    return expand(g:arcade_data_dir)
+  endif
+  if has('nvim')
+    return stdpath('data') . '/vim-arcade'
+  endif
+  let l:base = empty($XDG_DATA_HOME) ? expand('~/.local/share') : $XDG_DATA_HOME
+  return l:base . '/vim-arcade'
+endfunction
+
+function! arcade#util#read_json(path) abort
+  if !filereadable(a:path)
+    return {}
+  endif
+  try
+    let l:data = json_decode(join(readfile(a:path), "\n"))
+    return type(l:data) == v:t_dict ? l:data : {}
+  catch
+    return {}
+  endtry
+endfunction
+
+function! arcade#util#write_json(path, data) abort
+  try
+    let l:dir = fnamemodify(a:path, ':h')
+    if !isdirectory(l:dir)
+      call mkdir(l:dir, 'p', 0700)
+    endif
+    let l:tmp = a:path . '.tmp'
+    call writefile([json_encode(a:data)], l:tmp)
+    call rename(l:tmp, a:path)
+    return 1
+  catch
+    return 0
+  endtry
+endfunction
+
 function! arcade#util#clamp(v, lo, hi) abort
   return a:v < a:lo ? a:lo : (a:v > a:hi ? a:hi : a:v)
 endfunction

@@ -95,7 +95,8 @@ Tubes of coloured balls, one hand. Stack every colour into a tube of its own.
     <Space>  <CR>                         lift the top run, or drop it
     u                                     undo (32 steps; returns a handful)
     r                                     reshuffle this level
-    q  <Esc>                              quit
+    R                                     abandon the run, deal a new one
+    q                                     save and quit
 
 Balls drop onto an empty tube, or onto a tube whose top ball is the same
 colour and which still has room; dropping them back where they came from is
@@ -120,7 +121,18 @@ backwards from a solved board along inverted moves, so every level is
 winnable -- but a careless line of play can still strand the board with no
 legal move, which is what |u| is for.
 
-The run is recorded when you quit.
+<Esc> is disabled, as in |arcade-crawl|: it is muscle memory in normal mode
+and a run here can be many levels deep, so it stays put and points at q.
+
+A run has no end -- the levels keep coming -- so the game is written down
+whenever it closes, by q or by the buffer going away (|:bwipeout|, a closed
+tab, or Vim quitting). The next :ArcadeSort picks the run up where it was
+left, and R abandons it for a fresh one. Saved games live beside the scores
+in |g:arcade_data_dir| and are best effort: a missing, unreadable or
+inconsistent one just deals a new board.
+
+A run that spans several sittings is one row in |:ArcadeScores|, updated
+each time it is put down, rather than a row per quit.
 
 ==============================================================================
 6. OPTIONS                                                    *arcade-options*
