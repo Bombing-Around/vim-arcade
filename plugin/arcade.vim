@@ -9,6 +9,7 @@ let g:loaded_arcade = 1
 
 command! -nargs=0 Arcade2048    call arcade#twenty48#start()
 command! -nargs=0 ArcadeCrawl   call arcade#crawl#start()
+command! -nargs=0 ArcadeSort    call arcade#sort#start()
 command! -nargs=0 ArcadeScores  call arcade#scoreboard()
 command! -nargs=1 -complete=customlist,arcade#complete Arcade call arcade#start(<q-args>)
 
@@ -61,6 +62,27 @@ function! s:define_highlights() abort
   call s:hl('ArcadeCrawlHint',    'ctermfg=240 guifg=#585858')
   call s:hl('ArcadeCrawlWin',     'cterm=bold gui=bold ctermfg=220 guifg=#ffd700')
   call s:hl('ArcadeCrawlDead',    'cterm=bold gui=bold ctermfg=196 guifg=#ff0000')
+
+  " sort -- ball colours are also distinguished by shape, so the palette
+  " only has to be pleasant, not carry the whole board on its own.
+  call s:hl('ArcadeSortTitle',  'cterm=bold gui=bold ctermfg=80  guifg=#5fd7d7')
+  call s:hl('ArcadeSortScore',  'ctermfg=246 guifg=#949494')
+  call s:hl('ArcadeSortHint',   'ctermfg=240 guifg=#585858')
+  call s:hl('ArcadeSortTube',   'ctermfg=240 guifg=#585858')
+  call s:hl('ArcadeSortCursor', 'cterm=bold gui=bold ctermfg=252 guifg=#d0d0d0')
+  call s:hl('ArcadeSortMsg',    'ctermfg=246 guifg=#949494')
+  call s:hl('ArcadeSortWin',    'cterm=bold gui=bold ctermfg=220 guifg=#ffd700')
+  call s:hl('ArcadeSortStuck',  'cterm=bold gui=bold ctermfg=203 guifg=#ff5f5f')
+  call s:hl('ArcadeSortAssist', 'cterm=bold gui=bold ctermfg=220 guifg=#ffd700')
+  call s:hl('ArcadeSortC1',     'cterm=bold gui=bold ctermfg=203 guifg=#ff5f5f')
+  call s:hl('ArcadeSortC2',     'cterm=bold gui=bold ctermfg=114 guifg=#87d787')
+  call s:hl('ArcadeSortC3',     'cterm=bold gui=bold ctermfg=221 guifg=#ffd75f')
+  call s:hl('ArcadeSortC4',     'cterm=bold gui=bold ctermfg=75  guifg=#5fafff')
+  call s:hl('ArcadeSortC5',     'cterm=bold gui=bold ctermfg=176 guifg=#d787d7')
+  call s:hl('ArcadeSortC6',     'cterm=bold gui=bold ctermfg=80  guifg=#5fd7d7')
+  call s:hl('ArcadeSortC7',     'cterm=bold gui=bold ctermfg=215 guifg=#ffaf5f')
+  call s:hl('ArcadeSortC8',     'cterm=bold gui=bold ctermfg=253 guifg=#dadada')
+  call s:hl('ArcadeSortC9',     'cterm=bold gui=bold ctermfg=141 guifg=#af87ff')
 endfunction
 
 call s:define_highlights()

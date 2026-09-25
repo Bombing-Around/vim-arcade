@@ -6,6 +6,13 @@
 "    'draw': funcref(state) -> {'lines': [...], 'hl': [[lnum, bcol, bend, group], ...]}}
 " Key handlers get the controller dict and the pressed key, and may mutate
 " controller.state. The surface redraws after every handled key.
+"
+" A count typed before the key ("3l") is left in controller.count, 0 when
+" none was typed; it rides the dict rather than the handler signature so a
+" game that does not care about counts needs no changes.
+"
+" An optional 'on_close' funcref(ctl) is called once when the surface goes
+" away, however it goes away.
 
 let s:ns = -1
 let s:prop_types = {}
@@ -62,7 +69,49 @@ function! s:setup_buffer(ctl) abort
   let b:arcade = a:ctl
   let a:ctl.bufnr = l:bufnr
   call s:bind_keys(a:ctl)
+  call s:watch_close(a:ctl)
   return l:bufnr
+endfunction
+
+" A game can have more to lose than a window -- an unfinished run worth
+" resuming -- and the buffer can go without anyone pressing q: :bwipeout,
+" a closed tab, or Vim quitting outright. Buffer-local events cover the
+" first two; VimLeavePre is not a buffer event, so it sweeps every live
+" surface instead.
+function! s:watch_close(ctl) abort
+  if !has_key(a:ctl, 'on_close')
+    return
+  endif
+  augroup vim_arcade_surface
+    execute printf('autocmd! BufWipeout,BufUnload <buffer=%d> call arcade#ui#closing(%d)',
+          \ a:ctl.bufnr, a:ctl.bufnr)
+    autocmd! VimLeavePre * call arcade#ui#closing_all()
+  augroup END
+endfunction
+
+" Tells a controller its surface is going away, once and once only.
+function! arcade#ui#closing(bufnr) abort
+  let l:ctl = getbufvar(a:bufnr, 'arcade', {})
+  if type(l:ctl) != v:t_dict || empty(l:ctl) || get(l:ctl, 'closed', 0)
+    return
+  endif
+  if !has_key(l:ctl, 'on_close')
+    return
+  endif
+  let l:ctl.closed = 1
+  try
+    call call(l:ctl.on_close, [l:ctl])
+  catch
+    " Going away is not the moment to raise an error at the player.
+  endtry
+endfunction
+
+function! arcade#ui#closing_all() abort
+  for l:bufnr in range(1, bufnr('$'))
+    if bufexists(l:bufnr)
+      call arcade#ui#closing(l:bufnr)
+    endif
+  endfor
 endfunction
 
 " A mapping's {rhs}, even built via execute() and string(), still goes
@@ -74,11 +123,15 @@ endfunction
 " the name it was mapped under, and the lookup in ctl.keys would silently
 " miss. Passing a plain integer index instead sidesteps the translation
 " entirely: digits mean the same thing on both sides of execute().
+"
+" The :<C-u> is what makes counts work at all: Vim turns a count typed
+" before a : mapping into a line range, which :call rejects outright
+" (E481). Clearing it leaves the count readable in v:count.
 function! s:bind_keys(ctl) abort
-  nnoremap <buffer><silent><nowait> <Esc> :call arcade#ui#close()<CR>
+  nnoremap <buffer><silent><nowait> <Esc> :<C-u>call arcade#ui#close()<CR>
   let b:arcade_key_names = keys(a:ctl.keys)
   for l:idx in range(len(b:arcade_key_names))
-    execute printf('nnoremap <buffer><silent><nowait> %s :call arcade#ui#dispatch(%d)<CR>',
+    execute printf('nnoremap <buffer><silent><nowait> %s :<C-u>call arcade#ui#dispatch(%d, v:count)<CR>',
           \ b:arcade_key_names[l:idx], l:idx)
   endfor
   " Swallow keys that would otherwise move the cursor or edit the board.
@@ -110,16 +163,16 @@ endfunction
 
 " Entry point actually wired to keypresses; see the comment on s:bind_keys
 " for why the mapping passes an index here rather than the key name.
-function! arcade#ui#dispatch(idx) abort
+function! arcade#ui#dispatch(idx, ...) abort
   if !exists('b:arcade_key_names') || a:idx >= len(b:arcade_key_names)
     return
   endif
-  call arcade#ui#key(b:arcade_key_names[a:idx])
+  call arcade#ui#key(b:arcade_key_names[a:idx], a:0 ? a:1 : 0)
 endfunction
 
 " Entry point for direct calls (tests, other mappings) that already have
 " the real key name in hand.
-function! arcade#ui#key(key) abort
+function! arcade#ui#key(key, ...) abort
   if !exists('b:arcade')
     return
   endif
@@ -128,6 +181,7 @@ function! arcade#ui#key(key) abort
   if type(l:Handler) != v:t_func
     return
   endif
+  let l:ctl.count = a:0 ? a:1 : 0
   call call(l:Handler, [l:ctl, a:key])
   if bufexists(get(l:ctl, 'bufnr', -1))
     call arcade#ui#redraw(l:ctl)
