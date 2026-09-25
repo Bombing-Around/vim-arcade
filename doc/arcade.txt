@@ -142,10 +142,10 @@ turns the level zen: no record, and it does not count towards the run. |u|
 hands the tube back and scoring with it, and the next level starts clean.
 There are two a level, since an unlimited supply solves every board.
 
-                                                          *g:arcade_sort_zen*
+                                                             *arcade-sort-zen*
 z toggles zen: no records, no tally, just the board and the move count. A
 zen run is never written to the scoreboard and never touches a level
-record. Set g:arcade_sort_zen to start every run that way.
+record. Set |g:arcade_sort_zen| to start every run that way.
 
 <Esc> is disabled, as in |arcade-crawl|: it is muscle memory in normal mode
 and a run here can be many levels deep, so it stays put and points at q.

@@ -1023,6 +1023,23 @@ function! s:test_surface() abort
   silent! bwipeout!
 endfunction
 
+" -------------------------------------------------------------------- docs
+
+" Plugin managers run :helptags on install, and a duplicate tag is a hard
+" E154 that fails the whole install. Build the tags somewhere scratch so
+" the suite never writes into doc/.
+function! s:test_helptags() abort
+  let l:dir = tempname()
+  call mkdir(l:dir, 'p')
+  call writefile(readfile('doc/arcade.txt'), l:dir . '/arcade.txt')
+  try
+    execute 'helptags' fnameescape(l:dir)
+    call s:ok(filereadable(l:dir . '/tags'), 'helptags builds the tags file')
+  catch
+    call add(v:errors, 'FAIL: helptags: ' . v:exception)
+  endtry
+endfunction
+
 " --------------------------------------------------------------------- run
 
 let s:tests = [
@@ -1041,7 +1058,7 @@ let s:tests = [
       \ 's:test_sort_hint_cost_escalates', 's:test_sort_resume_with_spare',
       \ 's:test_sort_suspend_round_trip', 's:test_sort_resume_rejects_junk',
       \ 's:test_sort_resume_through_the_surface', 's:test_sort_escape_stays_put',
-      \ 's:test_score_run_dedupe', 's:test_surface']
+      \ 's:test_score_run_dedupe', 's:test_helptags', 's:test_surface']
 
 for s:name in s:tests
   try
