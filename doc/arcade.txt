@@ -7,9 +7,10 @@ CONTENTS                                                     *arcade-contents*
   2. Commands .............................. |arcade-commands|
   3. 2048 .................................. |arcade-2048|
   4. Crawl ................................. |arcade-crawl|
-  5. Options ............................... |arcade-options|
-  6. Highlights ............................ |arcade-highlights|
-  7. Extending ............................. |arcade-extending|
+  5. Sort .................................. |arcade-sort|
+  6. Options ............................... |arcade-options|
+  7. Highlights ............................ |arcade-highlights|
+  8. Extending ............................. |arcade-extending|
 
 ==============================================================================
 1. INTRO                                                        *arcade-intro*
@@ -25,13 +26,16 @@ neither, the games still play, just monochrome.
 2. COMMANDS                                                  *arcade-commands*
 
                                                                     *:Arcade*
-:Arcade {game}      Start {game}. Completes on "2048" and "crawl".
+:Arcade {game}      Start {game}. Completes on "2048", "crawl" and "sort".
 
                                                                 *:Arcade2048*
 :Arcade2048         Start 2048.
 
                                                                *:ArcadeCrawl*
 :ArcadeCrawl        Start the dungeon crawler.
+
+                                                                *:ArcadeSort*
+:ArcadeSort         Start the ball sort puzzle.
 
                                                               *:ArcadeScores*
 :ArcadeScores       Print the best score and the last runs of each game.
@@ -83,7 +87,81 @@ carrying out the Amulet of Yendor, which lies on the deepest level
 (|g:arcade_crawl_depth|).
 
 ==============================================================================
-5. OPTIONS                                                    *arcade-options*
+5. SORT                                                          *arcade-sort*
+
+Tubes of coloured balls, one hand. Stack every colour into a tube of its own.
+
+    h l  <Left> <Right>                   move the hand between tubes
+    <Space>  <CR>                         lift the top run, or drop it
+    u                                     undo (32 steps; returns a handful)
+    ?                                     hint: point at a move (costs more
+                                          every time you ask)
+    t                                     take a spare tube (forfeits the
+                                          level's record)
+    z                                     toggle zen
+    r                                     reshuffle this level
+    R                                     abandon the run, deal a new one
+    q                                     save and quit
+
+Balls drop onto an empty tube, or onto a tube whose top ball is the same
+colour and which still has room; dropping them back where they came from is
+always allowed and costs no move. Each colour is also a distinct shape, so
+the board reads on a monochrome build.
+
+A |count| applies as it does anywhere else: >
+    2<Space>    lift two balls of a run of three
+    1<Space>    drop one of the handful you are carrying
+    3l          walk three tubes to the right
+<
+Dropping into a tube with less room than you are carrying puts in what fits
+and leaves the rest in hand, which is the same manoeuvre without counting.
+A handful is always one colour, one undo step covers a whole drop, and the
+move counter counts balls, so par and score mean the same thing whether a
+run moves in one keystroke or three.
+
+Levels run from four colours up to nine, always with two spare tubes. A
+level is dealt by walking backwards from a solved board along inverted
+moves, so every level is winnable -- but a careless line of play can still
+strand the board with no legal move.
+
+There are no points. A cleared level is worth the number of moves it took,
+each level keeps its own record, and beating it is what the banner says.
+A run's tally is simply how many levels it cleared.
+
+? and t are help, and help is not free.
+
+A hint costs a move the first time, two the second, three the third, and so
+on; the price resets with the level, like the move count it charges to. It
+ranks the legal moves -- finish a tube, empty a tube, add to a colour,
+anything -- rather than consulting the solution the level was dealt from,
+which goes stale as soon as the board leaves the dealt position.
+
+A spare tube is not priced in moves at all, because a widened board is a
+different board and its move count is no longer worth comparing. Taking one
+turns the level zen: no record, and it does not count towards the run. |u|
+hands the tube back and scoring with it, and the next level starts clean.
+There are two a level, since an unlimited supply solves every board.
+
+                                                             *arcade-sort-zen*
+z toggles zen: no records, no tally, just the board and the move count. A
+zen run is never written to the scoreboard and never touches a level
+record. Set |g:arcade_sort_zen| to start every run that way.
+
+<Esc> is disabled, as in |arcade-crawl|: it is muscle memory in normal mode
+and a run here can be many levels deep, so it stays put and points at q.
+
+A run has no end -- the levels keep coming -- so the game is written down
+whenever it closes, by q or by the buffer going away (|:bwipeout|, a closed
+tab, or Vim quitting). The next :ArcadeSort picks the run up where it was
+left, and R abandons it for a fresh one. Saved games live beside the scores
+in |g:arcade_data_dir| and are best effort: a missing, unreadable or
+inconsistent one just deals a new board.
+
+A run that spans several sittings is one row in |:ArcadeScores|, updated
+each time it is put down, rather than a row per quit.
+
+==============================================================================
+6. OPTIONS                                                    *arcade-options*
 
                                                              *g:arcade_window*
 g:arcade_window        string (default "tab")
@@ -92,6 +170,10 @@ g:arcade_window        string (default "tab")
                                                               *g:arcade_ascii*
 g:arcade_ascii         boolean (default: on unless 'encoding' is utf-8)
         Draw with ASCII instead of box-drawing characters.
+
+                                                          *g:arcade_sort_zen*
+g:arcade_sort_zen      boolean (default 0)
+        Start ball sort runs in zen: no scoring, no records.
 
                                                         *g:arcade_crawl_depth*
 g:arcade_crawl_depth   number (default 8)
@@ -105,7 +187,7 @@ g:arcade_data_dir      string
         a game.
 
 ==============================================================================
-6. HIGHLIGHTS                                              *arcade-highlights*
+7. HIGHLIGHTS                                              *arcade-highlights*
 
 All groups are defined with |:highlight-default|, so a colorscheme or your
 vimrc wins. 2048 uses Arcade2048Title, Arcade2048Score, Arcade2048Hint,
@@ -114,10 +196,13 @@ Crawl uses ArcadeCrawlStatus, ArcadeCrawlWall, ArcadeCrawlFloor,
 ArcadeCrawlDim, ArcadeCrawlPlayer, ArcadeCrawlMonster, ArcadeCrawlStairs,
 ArcadeCrawlGold, ArcadeCrawlPotion, ArcadeCrawlGear, ArcadeCrawlAmulet,
 ArcadeCrawlLog, ArcadeCrawlLogNew, ArcadeCrawlHint, ArcadeCrawlWin and
-ArcadeCrawlDead.
+ArcadeCrawlDead. Sort uses ArcadeSortTitle, ArcadeSortScore, ArcadeSortHint,
+ArcadeSortTube, ArcadeSortCursor, ArcadeSortMsg, ArcadeSortWin,
+ArcadeSortStuck, ArcadeSortAssist (the tubes a hint points at) and
+ArcadeSortC{1..9} for the ball colours.
 
 ==============================================================================
-7. EXTENDING                                                *arcade-extending*
+8. EXTENDING                                                *arcade-extending*
 
 |arcade#ui#open()| takes a controller dict and owns the buffer, the mappings
 and the redraw, so a new game only supplies state, a draw function and key

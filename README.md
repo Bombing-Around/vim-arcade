@@ -1,11 +1,12 @@
 # vim-arcade
 
-Two small games that run inside a Vim or Neovim buffer: **2048** and a
-turn-based **dungeon crawler**. One legacy-VimScript implementation serves both
-editors — no Lua, no Vim9, no external process, no dependencies.
+Three small games that run inside a Vim or Neovim buffer: **2048**, a
+turn-based **dungeon crawler**, and a **ball sort** puzzle. One
+legacy-VimScript implementation serves both editors — no Lua, no Vim9, no
+external process, no dependencies.
 
 ```
-:Arcade2048          :ArcadeCrawl          :ArcadeScores
+:Arcade2048    :ArcadeCrawl    :ArcadeSort    :ArcadeScores
 ```
 
 ## Install
@@ -17,7 +18,7 @@ Any plugin manager, or just drop the directory on your `runtimepath`.
 Plug 'Bombing-Around/vim-arcade'
 
 " lazy.nvim
-{ 'Bombing-Around/vim-arcade', cmd = { 'Arcade', 'Arcade2048', 'ArcadeCrawl' } }
+{ 'Bombing-Around/vim-arcade', cmd = { 'Arcade', 'Arcade2048', 'ArcadeCrawl', 'ArcadeSort' } }
 ```
 
 Requires Vim 8.0+ or Neovim. Colour uses text properties (Vim) or extmarks
@@ -35,6 +36,53 @@ Scores persist between sessions.
 descent, field of view is recursive shadowcasting, monsters only act when they
 can see you. Reach depth 8, grab the Amulet of Yendor (`"`), and the run is a
 win.
+
+## Sort
+
+Tubes of coloured balls; stack every colour into a tube of its own. `h`/`l` or
+the arrows walk the hand between tubes, `<Space>` lifts the whole run of
+matching balls off a tube and `<Space>` drops it again, `u` undoes, `r`
+reshuffles, `q` quits. Balls only drop onto an empty tube or onto their own
+colour, and each colour is a distinct shape as well, so the board still reads
+without colour.
+
+Counts work the way they do everywhere else in vim: `2<Space>` lifts two of a
+run of three, `2l` walks two tubes over, and `1<Space>` over the target drops
+one of what you are holding. Dropping into a tube with less room than you are
+carrying puts in what fits and keeps the rest in hand — the same manoeuvre
+without the arithmetic. One `u` puts back a whole handful.
+
+`<Esc>` is disabled: it is muscle memory in normal mode and a run can be many
+levels deep, so it stays put and points at `q` instead. The run is written down
+whenever the game closes — `q`, a wiped buffer, a closed tab or Vim quitting —
+and the next `:ArcadeSort` picks it up where you left it. `R` abandons it and
+deals a fresh run.
+
+```
+            ●
+            ●            <- three in hand, hovering
+            ●
+│ │ │◆│ │ │ │ │ │ │ │◆│
+│ │ │▲│ │■│ │ │ │ │ │▲│
+│ │ │▲│ │■│ │ │ │●│ │■│
+│ │ │▲│ │■│ │ │ │●│ │◆│
+╰─╯ ╰─╯ ╰─╯ ╰─╯ ╰─╯ ╰─╯
+            ▲
+```
+
+Levels run from four colours to nine, two spare tubes throughout. Each one is
+dealt by walking backwards from a solved board along inverted moves, so every
+level is winnable — though a careless line still strands the board.
+
+Stuck, or just want a nudge? `?` points at a move worth making, and it gets
+dearer every time you ask — one move, then two, then three. `t` hands you a
+spare tube, and that is not a price so much as a decision: the level stops
+being scored the moment you take one. No record, no tally, just the board and
+the counter. Undo hands the tube back and scoring with it.
+
+There are no points. A level is scored by how few moves it took, and each level
+keeps its own record — beat it and the board says so. `z` is zen: no records,
+no tally, just tubes. A zen run leaves nothing behind at all.
 
 ## Options
 
